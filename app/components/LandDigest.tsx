@@ -49,7 +49,7 @@ interface ProfileData {
   soil_ph?:       string | null
   pest_level?:    string | null
   water_color?:   string | null
-  smoke_exposure?: boolean
+  smoke_exposure?: string | null
 }
 
 interface RiskPlot {

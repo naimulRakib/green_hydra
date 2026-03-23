@@ -62,6 +62,7 @@ DECLARE
     v_layer4_surveys INT := 0;
     v_layer5_proximity INT := 0;
     v_total_score INT := 0;
+    v_recent_count INT := 0;
     
     -- Output Variables
     v_metal_type TEXT := 'mixed';
@@ -127,19 +128,36 @@ BEGIN
     FOR v_scans IN 
         SELECT id, ai_confidence, verification_status, environmental_context
         FROM public.scan_logs
-        WHERE farmer_id = v_farmer_id AND stress_type = 'Abiotic_Pollution'
+        WHERE farmer_id = v_farmer_id
+          AND land_id = p_land_id
+          AND stress_type = 'Abiotic_Pollution'
+          AND created_at > NOW() - INTERVAL '90 days'
         ORDER BY created_at DESC LIMIT 3
     LOOP
         v_layer3_scans := v_layer3_scans + 6; -- Base points per scan
         IF v_latest_scan_id IS NULL THEN v_latest_scan_id := v_scans.id; END IF;
         
-        IF (v_scans.environmental_context->>'plume_score')::FLOAT > 0.6 THEN v_layer3_scans := v_layer3_scans + 3; END IF;
-        IF (v_scans.environmental_context->>'plume_exposure_hours_7d')::FLOAT > 24 THEN v_layer3_scans := v_layer3_scans + 3; END IF;
-        IF (v_scans.environmental_context->>'canal_contamination')::BOOLEAN = true THEN v_layer3_scans := v_layer3_scans + 2; END IF;
+        IF COALESCE((v_scans.environmental_context->>'plume_score')::FLOAT, 0) > 0.30 THEN v_layer3_scans := v_layer3_scans + 3; END IF;
+        IF COALESCE((v_scans.environmental_context->>'plume_exposure_hours_7d')::FLOAT, 0) > 12 THEN v_layer3_scans := v_layer3_scans + 3; END IF;
+        IF COALESCE(v_scans.environmental_context->>'canal_contamination', 'false') = 'true' THEN v_layer3_scans := v_layer3_scans + 2; END IF;
         
-        IF v_scans.ai_confidence > 0.75 THEN v_layer3_scans := v_layer3_scans + 2; END IF;
+        IF v_scans.ai_confidence > 0.65 THEN v_layer3_scans := v_layer3_scans + 2; END IF;
         IF v_scans.verification_status = 'verified' THEN v_layer3_scans := v_layer3_scans + 4; END IF;
     END LOOP;
+
+    -- Frequency bonus: 3 scans in 30 days = persistent exposure
+    SELECT COUNT(*) INTO v_recent_count
+    FROM public.scan_logs
+    WHERE farmer_id = v_farmer_id
+      AND land_id = p_land_id
+      AND stress_type = 'Abiotic_Pollution'
+      AND created_at > NOW() - INTERVAL '30 days';
+
+    IF v_recent_count >= 3 THEN
+        v_layer3_scans := v_layer3_scans + 8; -- persistent pattern bonus
+    ELSIF v_recent_count >= 2 THEN
+        v_layer3_scans := v_layer3_scans + 4;
+    END IF;
 
     IF v_layer3_scans > 30 THEN v_layer3_scans := 30; END IF;
 

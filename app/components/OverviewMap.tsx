@@ -249,24 +249,23 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
     flyTo: (...args: unknown[]) => void
   }
 
+  type LeafletLayerLike = {
+    bindPopup: (html: string, opts?: Record<string, unknown>) => LeafletLayerLike
+    bindTooltip: (html: string, opts?: Record<string, unknown>) => LeafletLayerLike
+    addTo: (map: LeafletMapLike) => LeafletLayerLike
+    on?: (event: string, handler: () => void) => LeafletLayerLike
+    getBounds?: () => { isValid: () => boolean }
+    openPopup?: () => void
+  }
+
   type LeafletGlobal = {
     map: (el: HTMLElement, opts: Record<string, unknown>) => LeafletMapLike
     tileLayer: (url: string, opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => void }
-    geoJSON: (geo: unknown, opts?: Record<string, unknown>) => {
-      bindPopup: (html: string, opts?: Record<string, unknown>) => unknown
-      bindTooltip?: (html: string, opts?: Record<string, unknown>) => unknown
-      addTo: (map: LeafletMapLike) => unknown
-      on?: (event: string, handler: () => void) => void
-      getBounds?: () => { isValid: () => boolean }
-      openPopup?: () => void
-    }
+    geoJSON: (geo: unknown, opts?: Record<string, unknown>) => LeafletLayerLike
     divIcon: (opts: Record<string, unknown>) => unknown
-    marker: (latlng: [number, number], opts: Record<string, unknown>) => {
-      bindPopup: (html: string, opts?: Record<string, unknown>) => unknown
-      addTo: (map: LeafletMapLike) => unknown
-    }
-    circle: (latlng: [number, number], opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => unknown }
-    polygon: (latlngs: [number, number][], opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => unknown }
+    marker: (latlng: [number, number], opts: Record<string, unknown>) => LeafletLayerLike
+    circle: (latlng: [number, number], opts: Record<string, unknown>) => LeafletLayerLike
+    polygon: (latlngs: [number, number][], opts: Record<string, unknown>) => LeafletLayerLike
     Icon: { Default: { prototype: unknown; mergeOptions: (opts: Record<string, unknown>) => void } }
   }
 
@@ -523,13 +522,14 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
     communitySprayLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch {} })
     communitySprayLayersRef.current = []
 
+    const leaflet = L as LeafletGlobal // Capture for callback
     communitySpray.forEach(sp => {
       const color = sp.risk_level === 'red' ? '#f97316' : '#eab308'
       try {
         // Land boundary polygon
         if (sp.boundary_geojson) {
           const geo = typeof sp.boundary_geojson === 'string' ? JSON.parse(sp.boundary_geojson) : sp.boundary_geojson
-          const layer = L.geoJSON(geo, {
+          const layer = leaflet.geoJSON(geo, {
             style: { color, fillColor: color, fillOpacity: 0.30, weight: 2, dashArray: '6 3' },
           }).bindTooltip(
             `<div style="font-family:sans-serif;font-size:12px;min-width:160px">` +

@@ -178,6 +178,13 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     getContainer: () => HTMLElement;
   };
 
+  type LeafletLayerLike = {
+    addTo: (map: unknown) => LeafletLayerLike;
+    bindTooltip: (...args: unknown[]) => LeafletLayerLike;
+    bindPopup: (...args: unknown[]) => LeafletLayerLike;
+    on: (ev: string, handler: () => void) => LeafletLayerLike;
+  };
+
   type LeafletGlobal = {
     Icon: {
       Default: {
@@ -190,18 +197,10 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     circleMarker: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
     polyline: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
     polygon: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
-    geoJSON: (...args: unknown[]) => {
-      addTo: (map: unknown) => unknown;
-      bindTooltip: (...args: unknown[]) => unknown;
-      bindPopup: (...args: unknown[]) => unknown;
-      on: (ev: string, handler: () => void) => void;
-    };
+    geoJSON: (...args: unknown[]) => LeafletLayerLike;
     divIcon: (...args: unknown[]) => unknown;
-    marker: (...args: unknown[]) => {
-      bindTooltip: (...args: unknown[]) => unknown;
-      addTo: (map: unknown) => unknown;
-    };
-    circle: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
+    marker: (...args: unknown[]) => LeafletLayerLike;
+    circle: (...args: unknown[]) => LeafletLayerLike;
   };
 
   function getLeaflet(): LeafletGlobal | null {
@@ -324,7 +323,8 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
         const geo = typeof plot.boundary_geojson === "string"
           ? JSON.parse(plot.boundary_geojson) : plot.boundary_geojson;
         const cfg = RISK[plot.risk_level] ?? RISK.green;
-        const layer = L.geoJSON(geo, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const layer = L!.geoJSON(geo as any, {
           style: { color: cfg.stroke, fillColor: cfg.fill, fillOpacity: 0.25, weight: 2.5 },
         })
           .bindTooltip(
@@ -452,7 +452,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
 
   // ── Core: go to location (shared by GPS + manual) ───────────────
   const goToLocation = useCallback(async (lat: number, lng: number) => {
-    const L = getLeaflet();
+    let L = getLeaflet();
     if (!L) return;
 
     // Switch to map tab first — this mounts the map div so the
@@ -466,6 +466,10 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     } catch {
       return; // timed out — give up silently
     }
+
+    // Re-check L after async in case it changed
+    L = getLeaflet();
+    if (!L) return;
 
     // 1. Fly map
     map.flyTo([lat, lng], 16, { animate: true, duration: 1.2 });

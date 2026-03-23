@@ -72,7 +72,7 @@ BEGIN
     v_pollution_scans,
     v_nutrient_scans
   FROM scan_logs
-  WHERE farmer_id = v_land.farmer_id
+  WHERE land_id = p_land_id
     AND created_at > NOW() - INTERVAL '90 days';
 
   -- Count heavy metal reports

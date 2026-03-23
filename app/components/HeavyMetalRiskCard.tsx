@@ -1,8 +1,10 @@
 import { getHeavyMetalReport } from '../actions/heavyMetalActions'
 
 export default async function HeavyMetalRiskCard({ landId }: { landId: string }) {
+  console.log('[HeavyMetalRiskCard] landId received:', landId)
   // Fetch the latest generated report for this land plot
   const report = await getHeavyMetalReport(landId)
+  console.log('[HeavyMetalRiskCard] report:', report)
 
   if (!report) {
     // No report exists = mostly likely no abiotic scans triggered the pipeline yet.

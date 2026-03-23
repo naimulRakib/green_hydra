@@ -104,3 +104,57 @@ export async function fetchISRICSoilData(
     return fallback
   }
 }
+
+/**
+ * Computes a risk modifier (0-10) based on soil pH.
+ * Lower pH increases heavy metal mobility (higher risk).
+ * Higher pH decreases mobility (lower risk).
+ *
+ * @param ph_h2o pH value from ISRIC SoilGrids
+ * @returns Risk modifier points (0-10)
+ */
+export function computePhRiskModifier(ph_h2o: number | null): number {
+  if (ph_h2o === null) return 0
+
+  // pH < 5.0: Very acidic, high metal mobility
+  if (ph_h2o < 5.0) return 10
+  // pH 5.0-5.5: Acidic
+  if (ph_h2o < 5.5) return 7
+  // pH 5.5-6.0: Slightly acidic
+  if (ph_h2o < 6.0) return 4
+  // pH 6.0-7.0: Neutral, low mobility
+  if (ph_h2o < 7.0) return 2
+  // pH 7.0-7.5: Slightly alkaline
+  if (ph_h2o < 7.5) return 1
+  // pH >= 7.5: Alkaline, metals less mobile but may precipitate
+  return 3
+}
+
+/**
+ * Returns a Bangla explanation of metal mobility based on pH.
+ *
+ * @param ph_h2o pH value from ISRIC SoilGrids
+ * @returns Human-readable explanation in Bangla
+ */
+export function getMetalMobilityExplanation(ph_h2o: number | null): string {
+  if (ph_h2o === null) {
+    return 'মাটির pH ডেটা পাওয়া যায়নি।'
+  }
+
+  if (ph_h2o < 5.0) {
+    return `ISRIC pH ${ph_h2o.toFixed(1)}: অত্যন্ত অম্লীয় মাটি — ভারী ধাতু সহজে দ্রবীভূত হয় এবং শস্যে প্রবেশ করতে পারে।`
+  }
+  if (ph_h2o < 5.5) {
+    return `ISRIC pH ${ph_h2o.toFixed(1)}: অম্লীয় মাটি — ভারী ধাতুর গতিশীলতা বেশি।`
+  }
+  if (ph_h2o < 6.0) {
+    return `ISRIC pH ${ph_h2o.toFixed(1)}: হালকা অম্লীয় — ধাতু গতিশীলতা মাঝারি।`
+  }
+  if (ph_h2o < 7.0) {
+    return `ISRIC pH ${ph_h2o.toFixed(1)}: নিরপেক্ষ মাটি — ভারী ধাতু কম গতিশীল।`
+  }
+  if (ph_h2o < 7.5) {
+    return `ISRIC pH ${ph_h2o.toFixed(1)}: হালকা ক্ষারীয় — ধাতু সাধারণত স্থির থাকে।`
+  }
+  return `ISRIC pH ${ph_h2o.toFixed(1)}: ক্ষারীয় মাটি — ধাতু অধঃক্ষেপিত হতে পারে তবে আর্সেনিক ঝুঁকি বাড়তে পারে।`
+}

@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useState, useEffect, useRef } from "react";
+import { createClient } from "@/app/utils/supabase/client";
 
 interface Props {
   farmerId: string;
@@ -18,12 +19,31 @@ interface LandPlot {
 }
 
 interface DiagnosisResult {
-  final_diagnosis: string;
-  disease_type: "Biotic" | "Abiotic";
+  final_diagnosis?: string;
+  disease_type?: "Biotic" | "Abiotic";
   spray_suppressed?: boolean;
   confidence?: number;
   reasoning_bn: string;
   remedy_bn: string;
+  primary_cause?: "biotic" | "abiotic" | "heavy_metal";
+  secondary_cause?: string | null;
+  detection_scores?: {
+    biotic?: { percentage: number; disease_name_bn?: string; subtype?: string };
+    abiotic?: { percentage: number; subtype?: string; spray_suppressed?: boolean };
+    heavy_metal?: { percentage: number; metals?: string[]; severity?: string };
+  };
+  compound_stress?: {
+    detected: boolean;
+    compound_warning_bn?: string;
+    affects_primary_remedy?: boolean;
+  } | null;
+  secondary_advice_bn?: string | null;
+  overrides_applied?: string[];
+  community?: {
+    nearby_verified_scans?: number;
+    area_trend_bn?: string | null;
+    epidemic_alert_active?: boolean;
+  };
 }
 
 interface DiagnosisContext {
@@ -37,13 +57,26 @@ interface DiagnoseResponse {
   success: boolean;
   blocked?: boolean;
   message?: string;
-  diagnosis?: DiagnosisResult;
+  diagnosis?: DiagnosisResult | string;
   source?: string;
   context?: DiagnosisContext | null;
   image_url?: string | null;
+  primary_cause?: "biotic" | "abiotic" | "heavy_metal";
+  secondary_cause?: string | null;
+  detection_scores?: DiagnosisResult["detection_scores"];
+  compound_stress?: DiagnosisResult["compound_stress"];
+  secondary_advice_bn?: string | null;
+  community?: DiagnosisResult["community"];
+  overrides_applied?: string[];
+  disease_type?: "Biotic" | "Abiotic";
+  spray_suppressed?: boolean;
+  confidence?: number;
+  reasoning_bn?: string;
+  remedy_bn?: string;
 }
 
 export default function DiseaseScanner({ farmerId, plots }: Props) {
+  const supabase = createClient();
   const [selectedLandId, setSelectedLandId] = useState<string>("");
   const [image, setImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -104,10 +137,15 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
           try {
             const { latitude, longitude } = position.coords;
             const base64Image = await convertToBase64(image);
+            const { data: authSession } = await supabase.auth.getSession();
+            const accessToken = authSession.session?.access_token;
 
             const response = await fetch("/api/diagnose", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
+              headers: {
+                "Content-Type": "application/json",
+                ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+              },
               body: JSON.stringify({
                 imageBase64: base64Image,
                 farmerId,
@@ -126,8 +164,32 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
               } else {
                 setError(data.message || "স্ক্যান করতে সমস্যা হয়েছে।");
               }
-            } else {
-              setResult(data.diagnosis ?? null);
+              } else {
+              const diagnosisObj =
+                typeof data.diagnosis === "object" && data.diagnosis !== null
+                  ? (data.diagnosis as DiagnosisResult)
+                  : null;
+              setResult({
+                primary_cause: data.primary_cause ?? diagnosisObj?.primary_cause,
+                secondary_cause: data.secondary_cause ?? diagnosisObj?.secondary_cause ?? null,
+                detection_scores: data.detection_scores ?? diagnosisObj?.detection_scores,
+                compound_stress: data.compound_stress ?? diagnosisObj?.compound_stress ?? null,
+                secondary_advice_bn: data.secondary_advice_bn ?? diagnosisObj?.secondary_advice_bn ?? null,
+                community: data.community ?? diagnosisObj?.community,
+                overrides_applied: data.overrides_applied ?? diagnosisObj?.overrides_applied ?? [],
+                final_diagnosis:
+                  (typeof data.diagnosis === "string" ? data.diagnosis : diagnosisObj?.final_diagnosis) ??
+                  data.detection_scores?.biotic?.disease_name_bn ??
+                  "",
+                disease_type:
+                  data.disease_type ??
+                  diagnosisObj?.disease_type ??
+                  (data.primary_cause === "biotic" ? "Biotic" : "Abiotic"),
+                spray_suppressed: data.spray_suppressed ?? diagnosisObj?.spray_suppressed ?? false,
+                confidence: data.confidence ?? diagnosisObj?.confidence ?? 0,
+                reasoning_bn: data.reasoning_bn ?? diagnosisObj?.reasoning_bn ?? "",
+                remedy_bn: data.remedy_bn ?? diagnosisObj?.remedy_bn ?? "",
+              });
               setResultSource(data.source ?? "");
               setResultContext(data.context ?? null);
               setSavedImageUrl(data.image_url ?? null);
@@ -243,9 +305,104 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
 
           {/* Header */}
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-bold text-lg text-gray-800">{result.final_diagnosis}</h3>
+            <h3 className="font-bold text-lg text-gray-800">{result.final_diagnosis || "নির্ণয় পাওয়া যায়নি"}</h3>
             <span className="text-xs text-gray-400 whitespace-nowrap">{resultSource}</span>
           </div>
+
+          {/* Three Detection Scores */}
+          {result.detection_scores && (
+            <div className="grid grid-cols-3 gap-2 mt-3">
+              <div className={`p-2 rounded-lg text-center border ${
+                (result.detection_scores.biotic?.percentage ?? 0) >= 35
+                  ? "bg-blue-50 border-blue-200"
+                  : "bg-gray-50 border-gray-200"
+              }`}>
+                <div className="text-xs text-gray-500 font-bold">🦠 জৈবিক</div>
+                <div className={`text-xl font-black ${
+                  (result.detection_scores.biotic?.percentage ?? 0) >= 35
+                    ? "text-blue-700" : "text-gray-400"
+                }`}>
+                  {result.detection_scores.biotic?.percentage ?? 0}%
+                </div>
+                {result.detection_scores.biotic?.disease_name_bn && (
+                  <div className="text-xs text-gray-600 truncate">
+                    {result.detection_scores.biotic.disease_name_bn}
+                  </div>
+                )}
+              </div>
+
+              <div className={`p-2 rounded-lg text-center border ${
+                (result.detection_scores.abiotic?.percentage ?? 0) >= 35
+                  ? "bg-orange-50 border-orange-200"
+                  : "bg-gray-50 border-gray-200"
+              }`}>
+                <div className="text-xs text-gray-500 font-bold">⚗️ দূষণ</div>
+                <div className={`text-xl font-black ${
+                  (result.detection_scores.abiotic?.percentage ?? 0) >= 35
+                    ? "text-orange-700" : "text-gray-400"
+                }`}>
+                  {result.detection_scores.abiotic?.percentage ?? 0}%
+                </div>
+                {result.detection_scores.abiotic?.spray_suppressed && (
+                  <div className="text-xs text-red-600 font-bold">স্প্রে নিষেধ</div>
+                )}
+              </div>
+
+              <div className={`p-2 rounded-lg text-center border ${
+                (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
+                  ? "bg-yellow-50 border-yellow-200"
+                  : "bg-gray-50 border-gray-200"
+              }`}>
+                <div className="text-xs text-gray-500 font-bold">⚠️ ধাতু</div>
+                <div className={`text-xl font-black ${
+                  (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
+                    ? "text-yellow-700" : "text-gray-400"
+                }`}>
+                  {result.detection_scores.heavy_metal?.percentage ?? 0}%
+                </div>
+                {result.detection_scores.heavy_metal?.metals?.[0] && (
+                  <div className="text-xs text-gray-600">
+                    {result.detection_scores.heavy_metal.metals[0]}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Compound Stress Warning */}
+          {result.compound_stress?.detected && result.compound_stress.compound_warning_bn && (
+            <div className="mt-3 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+              <p className="text-sm text-amber-800 font-medium leading-relaxed">
+                {result.compound_stress.compound_warning_bn}
+              </p>
+            </div>
+          )}
+
+          {/* Community signal */}
+          {result.community?.area_trend_bn && (
+            <div className="mt-2 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+              <p className="text-xs text-purple-700">
+                👥 {result.community.area_trend_bn}
+              </p>
+            </div>
+          )}
+
+          {/* Epidemic alert */}
+          {result.community?.epidemic_alert_active && (
+            <div className="mt-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg">
+              <p className="text-xs text-red-700 font-bold">
+                🚨 মহামারি সতর্কতা সক্রিয়
+              </p>
+            </div>
+          )}
+
+          {/* Secondary advice (compound stress) */}
+          {result.secondary_advice_bn && (
+            <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <p className="text-xs font-bold text-gray-700 mb-1">অতিরিক্ত পরামর্শ:</p>
+              <p className="text-sm text-gray-600">{result.secondary_advice_bn}</p>
+            </div>
+          )}
 
           {/* Type + spray badge */}
           <div className="flex flex-wrap gap-2">

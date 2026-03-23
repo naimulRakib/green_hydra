@@ -208,9 +208,8 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
       // Sort to match template.question_ids order
       const sorted = template.question_ids
         .map(id => (data ?? []).find((q: { question_id: string; options?: unknown }) => q.question_id === id))
-        .filter(Boolean)
-        .map((q: { options?: unknown }) => ({
-          ...q,
+        .filter((q): q is NonNullable<typeof q> => Boolean(q))
+        .map(q => ({
           ...q,
           options: typeof q.options === "string" ? JSON.parse(q.options) : q.options,
         }));
