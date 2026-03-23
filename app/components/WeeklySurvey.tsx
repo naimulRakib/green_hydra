@@ -86,20 +86,20 @@ type ViewMode = "landing" | "survey" | "water_step" | "result" | "profile";
 // ─── Category config ──────────────────────────────────────────────────────────
 
 const CAT_CONFIG: Record<string, { emoji: string; color: string; bg: string; border: string }> = {
-  soil:        { emoji: "🌱", color: "#d97706", bg: "#fffbeb", border: "#fcd34d" },
-  water:       { emoji: "💧", color: "#2563eb", bg: "#eff6ff", border: "#93c5fd" },
-  crop_stage:  { emoji: "🌾", color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
-  pest:        { emoji: "🐛", color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
+  soil: { emoji: "🌱", color: "#d97706", bg: "#fffbeb", border: "#fcd34d" },
+  water: { emoji: "💧", color: "#2563eb", bg: "#eff6ff", border: "#93c5fd" },
+  crop_stage: { emoji: "🌾", color: "#16a34a", bg: "#f0fdf4", border: "#86efac" },
+  pest: { emoji: "🐛", color: "#dc2626", bg: "#fef2f2", border: "#fca5a5" },
   environment: { emoji: "🏭", color: "#7c3aed", bg: "#f5f3ff", border: "#c4b5fd" },
 };
 
 const STAGE_LABELS: Record<string, string> = {
-  seedling:            "বীজতলা",
-  tillering:           "কুশি",
-  panicle_initiation:  "থোড়",
-  flowering:           "ফুল",
-  grain_filling:       "দানা",
-  mature:              "পাকা",
+  seedling: "বীজতলা",
+  tillering: "কুশি",
+  panicle_initiation: "থোড়",
+  flowering: "ফুল",
+  grain_filling: "দানা",
+  mature: "পাকা",
 };
 const TEXTURE_LABELS: Record<string, string> = {
   clay: "এঁটেল", loam: "দোআঁশ", sandy_loam: "বেলে দোআঁশ", sandy: "বেলে",
@@ -108,43 +108,52 @@ const PH_COLOR: Record<string, string> = {
   Acidic: "#ef4444", Normal: "#22c55e", Alkaline: "#f59e0b", Unknown: "#9ca3af",
 };
 
+type LeafletMapLike = { remove: () => void; on: (ev: string, handler: (e: unknown) => void) => void };
+type LeafletMarkerLike = { setLatLng: (latlng: [number, number]) => void };
+type LeafletGlobal = {
+  map: (...args: unknown[]) => LeafletMapLike;
+  tileLayer: (...args: unknown[]) => { addTo: (map: unknown) => void };
+  divIcon: (...args: unknown[]) => unknown;
+  marker: (...args: unknown[]) => LeafletMarkerLike & { addTo: (map: unknown) => LeafletMarkerLike };
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
   const supabase = createClient();
 
-  const [view, setView]               = useState<ViewMode>("landing");
-  const [lands, setLands]             = useState<LandPlot[]>([]);
+  const [view, setView] = useState<ViewMode>("landing");
+  const [lands, setLands] = useState<LandPlot[]>([]);
   const [selectedLand, setSelectedLand] = useState<string>("");
-  const [templates, setTemplates]     = useState<Template[]>([]);
+  const [templates, setTemplates] = useState<Template[]>([]);
   const [activeTemplate, setActiveTemplate] = useState<Template | null>(null);
-  const [questions, setQuestions]     = useState<Question[]>([]);
-  const [answers, setAnswers]         = useState<Record<string, string | string[]>>({});
-  const [step, setStep]               = useState(0);       // current question index
-  const [loading, setLoading]         = useState(false);
-  const [submitting, setSubmitting]   = useState(false);
-  const [error, setError]             = useState<string | null>(null);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [step, setStep] = useState(0);       // current question index
+  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
-  const [profile, setProfile]         = useState<LandProfile | null>(null);
+  const [profile, setProfile] = useState<LandProfile | null>(null);
   // Track which templates are already submitted this week
   const [completedThisWeek, setCompletedThisWeek] = useState<Set<string>>(new Set());
 
   // ─── Water source step state ────────────────────────────────────
-  const [waterType,       setWaterType]       = useState<string>("");
-  const [waterColor,      setWaterColor]      = useState<string>("");
-  const [waterOdor,       setWaterOdor]       = useState(false);
-  const [waterFishKill,   setWaterFishKill]   = useState(false);
-  const [waterLat,        setWaterLat]        = useState<number | null>(null);
-  const [waterLng,        setWaterLng]        = useState<number | null>(null);
+  const [waterType, setWaterType] = useState<string>("");
+  const [waterColor, setWaterColor] = useState<string>("");
+  const [waterOdor, setWaterOdor] = useState(false);
+  const [waterFishKill, setWaterFishKill] = useState(false);
+  const [waterLat, setWaterLat] = useState<number | null>(null);
+  const [waterLng, setWaterLng] = useState<number | null>(null);
   const [waterSubmitting, setWaterSubmitting] = useState(false);
-  const waterMapRef  = useRef<HTMLDivElement | null>(null);
-  const waterLeaflet = useRef<any>(null);
-  const waterMarker  = useRef<any>(null);
+  const waterMapRef = useRef<HTMLDivElement | null>(null);
+  const waterLeaflet = useRef<LeafletMapLike | null>(null);
+  const waterMarker = useRef<LeafletMarkerLike | null>(null);
 
   // ─── Fetch land list ────────────────────────────────────────────
   const fetchLands = useCallback(async () => {
     const { data } = await supabase.rpc("get_farmer_lands", { p_farmer_id: farmerId });
-    const list = (data ?? []).map((p: any) => ({
+    const list = (data ?? []).map((p: { land_id: string; land_name: string; land_name_bn: string | null; area_bigha: number }) => ({
       land_id: p.land_id, land_name: p.land_name,
       land_name_bn: p.land_name_bn, area_bigha: p.area_bigha,
     }));
@@ -174,7 +183,7 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
       .eq("land_id", landId)
       .eq("week_number", week)
       .eq("year", year);
-    setCompletedThisWeek(new Set((data ?? []).map((r: any) => r.template_id)));
+    setCompletedThisWeek(new Set((data ?? []).map((r: { template_id: string }) => r.template_id)));
   }, [farmerId]);
 
   useEffect(() => {
@@ -198,17 +207,19 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
 
       // Sort to match template.question_ids order
       const sorted = template.question_ids
-        .map(id => (data ?? []).find((q: any) => q.question_id === id))
+        .map(id => (data ?? []).find((q: { question_id: string; options?: unknown }) => q.question_id === id))
         .filter(Boolean)
-        .map((q: any) => ({
+        .map((q: { options?: unknown }) => ({
+          ...q,
           ...q,
           options: typeof q.options === "string" ? JSON.parse(q.options) : q.options,
         }));
       setQuestions(sorted);
       setActiveTemplate(template);
       setView("survey");
-    } catch (e: any) {
-      setError("প্রশ্ন লোড হয়নি: " + e.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError("প্রশ্ন লোড হয়নি: " + msg);
     } finally {
       setLoading(false);
     }
@@ -246,16 +257,16 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
     setSubmitting(true); setError(null);
     try {
       // Convert multi_select arrays to JSON arrays in answers object
-      const finalAnswers: Record<string, any> = {};
+      const finalAnswers: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(answers)) {
         finalAnswers[k] = Array.isArray(v) ? v : v;
       }
 
       const { data, error: rpcErr } = await supabase.rpc("submit_weekly_survey", {
-        p_farmer_id:   farmerId,
-        p_land_id:     selectedLand,
+        p_farmer_id: farmerId,
+        p_land_id: selectedLand,
         p_template_id: activeTemplate.template_id,
-        p_answers:     finalAnswers,
+        p_answers: finalAnswers,
       });
       if (rpcErr) throw rpcErr;
 
@@ -265,8 +276,9 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
       setWaterType(""); setWaterColor(""); setWaterOdor(false);
       setWaterFishKill(false); setWaterLat(null); setWaterLng(null);
       setView("water_step");
-    } catch (e: any) {
-      setError("জমা দেওয়া ব্যর্থ: " + (e.message ?? JSON.stringify(e)));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError("জমা দেওয়া ব্যর্থ: " + msg);
     } finally {
       setSubmitting(false);
     }
@@ -279,20 +291,20 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
     try {
       const { data, error: rpcErr } = await supabase.rpc("get_latest_land_profile", {
         p_farmer_id: farmerId,
-        p_land_id:   selectedLand,
+        p_land_id: selectedLand,
       });
       if (rpcErr) throw rpcErr;
       setProfile(data as LandProfile);
       setView("profile");
-    } catch (e: any) {
-      setError("প্রোফাইল লোড হয়নি: " + e.message);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError("প্রোফাইল লোড হয়নি: " + msg);
     } finally {
       setLoading(false);
     }
   }
 
   const currentQ = questions[step];
-  const progress  = questions.length > 0 ? ((step) / questions.length) * 100 : 0;
   const doneCount = completedThisWeek.size;
   const totalCount = templates.length;
 
@@ -508,11 +520,11 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
             <p style={S.questionText}>এই জমিতে সেচের পানি কোথা থেকে আসে?</p>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginTop: 12 }}>
               {[
-                { value: "river",     label: "🏞️ নদী"    },
-                { value: "canal",     label: "〰️ খাল"    },
-                { value: "pond",      label: "🔵 পুকুর"  },
-                { value: "beel",      label: "🌿 বিল"    },
-                { value: "tubewell",  label: "💧 নলকূপ"  },
+                { value: "river", label: "🏞️ নদী" },
+                { value: "canal", label: "〰️ খাল" },
+                { value: "pond", label: "🔵 পুকুর" },
+                { value: "beel", label: "🌿 বিল" },
+                { value: "tubewell", label: "💧 নলকূপ" },
                 { value: "reservoir", label: "🌊 জলাশয়" },
               ].map(opt => (
                 <button
@@ -575,12 +587,12 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
               <p style={S.questionText}>এই পানির রঙ এখন কেমন?</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
                 {[
-                  { value: "clear",          label: "✅ স্বচ্ছ — স্বাভাবিক",        danger: false },
-                  { value: "normal_monsoon", label: "🟫 বর্ষার স্বাভাবিক ঘোলা",     danger: false },
-                  { value: "brown",          label: "🟤 বাদামি — সন্দেহজনক",         danger: false },
-                  { value: "green",          label: "🟢 সবুজ — শেওলা",              danger: false },
-                  { value: "black",          label: "⚫ কালো — বিপজ্জনক",            danger: true  },
-                  { value: "foamy",          label: "🫧 ফেনাযুক্ত — রাসায়নিক",      danger: true  },
+                  { value: "clear", label: "✅ স্বচ্ছ — স্বাভাবিক", danger: false },
+                  { value: "normal_monsoon", label: "🟫 বর্ষার স্বাভাবিক ঘোলা", danger: false },
+                  { value: "brown", label: "🟤 বাদামি — সন্দেহজনক", danger: false },
+                  { value: "green", label: "🟢 সবুজ — শেওলা", danger: false },
+                  { value: "black", label: "⚫ কালো — বিপজ্জনক", danger: true },
+                  { value: "foamy", label: "🫧 ফেনাযুক্ত — রাসায়নিক", danger: true },
                 ].map(opt => (
                   <button
                     key={opt.value}
@@ -711,13 +723,13 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
                 try {
                   await supabase.rpc("upsert_water_source", {
                     p_farmer_id: farmerId,
-                    p_land_id:   selectedLand,
-                    p_lat:       waterLat ?? 23.8103,
-                    p_lng:       waterLng ?? 90.4125,
-                    p_type:      waterType,
-                    p_name_bn:   null,
-                    p_color:     waterColor,
-                    p_odor:      waterOdor,
+                    p_land_id: selectedLand,
+                    p_lat: waterLat ?? 23.8103,
+                    p_lng: waterLng ?? 90.4125,
+                    p_type: waterType,
+                    p_name_bn: null,
+                    p_color: waterColor,
+                    p_odor: waterOdor,
                     p_fish_kill: waterFishKill,
                   });
                 } catch (e) {
@@ -801,27 +813,37 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
               {/* Profile cards */}
               <div style={S.profileGrid}>
                 {([
-                  { icon: "🌱", title: "মাটি", items: [
-                    ["গঠন",       TEXTURE_LABELS[profile.soil_texture ?? ""] ?? profile.soil_texture ?? "—"],
-                    ["pH",        profile.soil_ph_status ?? "—"],
-                    ["নিষ্কাশন", profile.soil_drainage ?? "—"],
-                  ]},
-                  { icon: "💧", title: "পানি", items: [
-                    ["উৎস",          profile.water_source ?? "—"],
-                    ["আর্সেনিক ঝুঁকি", profile.water_source === "shallow_tubewell" ? "হ্যাঁ" : "না"],
-                  ]},
-                  { icon: "🌾", title: "ফসল", items: [
-                    ["ধাপ",  STAGE_LABELS[profile.current_growth_stage ?? ""] ?? profile.current_growth_stage ?? "—"],
-                  ]},
-                  { icon: "🐛", title: "পোকা", items: [
-                    ["চাপ", profile.pest_pressure ?? "—"],
-                  ]},
-                  { icon: "🏭", title: "পরিবেশ", items: [
-                    ["ধোঁয়া",      profile.recent_smoke_exposure ? "আছে" : "নেই"],
-                    ["খালে দূষণ", profile.canal_contamination    ? "হ্যাঁ" : "না"],
-                    ["প্রতিবেশী",  profile.neighbor_same_problem  ? "একই সমস্যা" : "আলাদা"],
-                  ]},
-                ] as { icon: string; title: string; items: [string,string][] }[]).map(({ icon, title, items }) => (
+                  {
+                    icon: "🌱", title: "মাটি", items: [
+                      ["গঠন", TEXTURE_LABELS[profile.soil_texture ?? ""] ?? profile.soil_texture ?? "—"],
+                      ["pH", profile.soil_ph_status ?? "—"],
+                      ["নিষ্কাশন", profile.soil_drainage ?? "—"],
+                    ]
+                  },
+                  {
+                    icon: "💧", title: "পানি", items: [
+                      ["উৎস", profile.water_source ?? "—"],
+                      ["আর্সেনিক ঝুঁকি", profile.water_source === "shallow_tubewell" ? "হ্যাঁ" : "না"],
+                    ]
+                  },
+                  {
+                    icon: "🌾", title: "ফসল", items: [
+                      ["ধাপ", STAGE_LABELS[profile.current_growth_stage ?? ""] ?? profile.current_growth_stage ?? "—"],
+                    ]
+                  },
+                  {
+                    icon: "🐛", title: "পোকা", items: [
+                      ["চাপ", profile.pest_pressure ?? "—"],
+                    ]
+                  },
+                  {
+                    icon: "🏭", title: "পরিবেশ", items: [
+                      ["ধোঁয়া", profile.recent_smoke_exposure ? "আছে" : "নেই"],
+                      ["খালে দূষণ", profile.canal_contamination ? "হ্যাঁ" : "না"],
+                      ["প্রতিবেশী", profile.neighbor_same_problem ? "একই সমস্যা" : "আলাদা"],
+                    ]
+                  },
+                ] as { icon: string; title: string; items: [string, string][] }[]).map(({ icon, title, items }) => (
                   <div key={title} style={S.profileCard}>
                     <p style={S.profileCardTitle}>{icon} {title}</p>
                     {items.map(([k, v]) => (
@@ -858,10 +880,10 @@ export default function WeeklySurvey({ farmerId }: { farmerId: string }) {
 
 // ─── WaterMapPicker — inline Leaflet map for water source pinning ──────────────
 interface WaterMapPickerProps {
-  mapRef:     React.RefObject<HTMLDivElement | null>;
-  leafletRef: React.RefObject<any>;
-  markerRef:  React.RefObject<any>;
-  onPick:     (lat: number, lng: number) => void;
+  mapRef: React.RefObject<HTMLDivElement | null>;
+  leafletRef: React.MutableRefObject<{ remove: () => void; on: (ev: string, handler: (e: unknown) => void) => void } | null>;
+  markerRef: React.MutableRefObject<{ setLatLng: (latlng: [number, number]) => void } | null>;
+  onPick: (lat: number, lng: number) => void;
 }
 
 function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPickerProps) {
@@ -869,8 +891,8 @@ function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPicke
     if (!mapRef.current || leafletRef.current) return;
 
     function init() {
-      const L = (window as any).L;
-      if (!mapRef.current) return;
+      const L = (window as unknown as { L?: LeafletGlobal }).L;
+      if (!L || !mapRef.current) return;
 
       // Try to get farmer GPS from localStorage (set during onboarding)
       let centerLat = 23.8103;
@@ -881,7 +903,7 @@ function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPicke
           const loc = JSON.parse(stored);
           if (loc.lat && loc.lng) { centerLat = loc.lat; centerLng = loc.lng; }
         }
-      } catch {}
+      } catch { }
 
       const map = L.map(mapRef.current, {
         center: [centerLat, centerLng],
@@ -901,8 +923,10 @@ function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPicke
         className: "",
       });
 
-      map.on("click", (e: any) => {
-        const { lat, lng } = e.latlng;
+      map.on("click", (e: unknown) => {
+        const latlng = (e as { latlng?: { lat: number; lng: number } })?.latlng;
+        if (!latlng) return;
+        const { lat, lng } = latlng;
         if (markerRef.current) {
           markerRef.current.setLatLng([lat, lng]);
         } else {
@@ -915,7 +939,7 @@ function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPicke
     }
 
     // Load Leaflet if not already on page
-    if ((window as any).L) {
+    if ((window as unknown as { L?: LeafletGlobal }).L) {
       init();
     } else {
       if (!document.querySelector("#leaflet-css-water")) {
@@ -938,7 +962,7 @@ function WaterMapPicker({ mapRef, leafletRef, markerRef, onPick }: WaterMapPicke
         markerRef.current = null;
       }
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -967,80 +991,80 @@ function getISOWeek(date: Date): number {
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const S: Record<string, React.CSSProperties> = {
-  root:         { background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #e5e7eb", fontFamily: "'Noto Sans Bengali', 'Hind Siliguri', sans-serif", fontSize: 14 },
-  header:       { background: "linear-gradient(135deg, #166534 0%, #15803d 100%)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
-  headerTitle:  { fontSize: 16, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" },
-  headerSub:    { fontSize: 12, color: "#bbf7d0", marginTop: 2 },
-  alertErr:     { background: "#fef2f2", borderBottom: "1px solid #fecaca", color: "#dc2626", padding: "10px 20px", display: "flex", justifyContent: "space-between", fontSize: 13 },
-  alertClose:   { background: "none", border: "none", color: "#dc2626", cursor: "pointer" },
+  root: { background: "#fff", borderRadius: 16, overflow: "hidden", border: "1px solid #e5e7eb", fontFamily: "'Noto Sans Bengali', 'Hind Siliguri', sans-serif", fontSize: 14 },
+  header: { background: "linear-gradient(135deg, #166534 0%, #15803d 100%)", padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" },
+  headerTitle: { fontSize: 16, fontWeight: 800, color: "#fff", letterSpacing: "-.3px" },
+  headerSub: { fontSize: 12, color: "#bbf7d0", marginTop: 2 },
+  alertErr: { background: "#fef2f2", borderBottom: "1px solid #fecaca", color: "#dc2626", padding: "10px 20px", display: "flex", justifyContent: "space-between", fontSize: 13 },
+  alertClose: { background: "none", border: "none", color: "#dc2626", cursor: "pointer" },
 
-  landBar:      { display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" },
+  landBar: { display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", background: "#f9fafb", borderBottom: "1px solid #e5e7eb", flexWrap: "wrap" },
   landBarLabel: { fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: ".04em", flexShrink: 0 },
-  landTabs:     { display: "flex", gap: 6, flexWrap: "wrap" },
-  landTab:      { padding: "5px 12px", borderRadius: 20, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", cursor: "pointer", fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 },
-  landTabActive:{ background: "#166534", borderColor: "#166534", color: "#fff" },
-  landTabArea:  { fontSize: 10, opacity: 0.7 },
-  noLand:       { padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 },
+  landTabs: { display: "flex", gap: 6, flexWrap: "wrap" },
+  landTab: { padding: "5px 12px", borderRadius: 20, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", cursor: "pointer", fontSize: 12, fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 },
+  landTabActive: { background: "#166534", borderColor: "#166534", color: "#fff" },
+  landTabArea: { fontSize: 10, opacity: 0.7 },
+  noLand: { padding: 24, textAlign: "center", color: "#9ca3af", fontSize: 13 },
 
-  landingWrap:  { padding: 20 },
-  landingHint:  { fontSize: 13, color: "#6b7280", marginBottom: 16 },
+  landingWrap: { padding: 20 },
+  landingHint: { fontSize: 13, color: "#6b7280", marginBottom: 16 },
   templateGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 },
   templateCard: { background: "#fff", border: "2px solid", borderRadius: 12, padding: 14, cursor: "pointer", textAlign: "left", fontFamily: "inherit", transition: "all .15s", display: "flex", flexDirection: "column", gap: 4 },
-  templateTop:  { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  templateEmoji:{ fontSize: 24 },
-  doneBadge:    { fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20 },
-  templateTitle:{ fontSize: 14, fontWeight: 700, margin: 0 },
+  templateTop: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
+  templateEmoji: { fontSize: 24 },
+  doneBadge: { fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20 },
+  templateTitle: { fontSize: 14, fontWeight: 700, margin: 0 },
   templateDesc: { fontSize: 11, color: "#6b7280", margin: 0 },
   templateMeta: { fontSize: 10, color: "#9ca3af", marginTop: 4 },
 
   progressWrap: { marginTop: 20, background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 },
-  progressLabel:{ fontSize: 12, color: "#6b7280" },
-  progressTrack:{ background: "#e5e7eb", borderRadius: 99, height: 8, overflow: "hidden" },
+  progressLabel: { fontSize: 12, color: "#6b7280" },
+  progressTrack: { background: "#e5e7eb", borderRadius: 99, height: 8, overflow: "hidden" },
   progressFill: { background: "linear-gradient(90deg, #16a34a, #22c55e)", borderRadius: 99, height: "100%", transition: "width .3s ease" },
 
-  surveyWrap:   { padding: 20, display: "flex", flexDirection: "column", gap: 16 },
-  surveyProgress:{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14 },
+  surveyWrap: { padding: 20, display: "flex", flexDirection: "column", gap: 16 },
+  surveyProgress: { background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14 },
   questionCard: { background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20 },
-  questionNum:  { fontSize: 11, fontWeight: 700, color: "#16a34a", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 },
+  questionNum: { fontSize: 11, fontWeight: 700, color: "#16a34a", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 8 },
   questionText: { fontSize: 16, fontWeight: 700, color: "#111827", marginBottom: 6, lineHeight: 1.5 },
-  multiHint:    { fontSize: 11, color: "#9ca3af", marginBottom: 12 },
-  optionList:   { display: "flex", flexDirection: "column", gap: 8, marginTop: 12 },
-  optionBtn:    { display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 10, border: "1.5px solid #e5e7eb", background: "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit", fontSize: 13, color: "#374151", transition: "all .12s", lineHeight: 1.5 },
+  multiHint: { fontSize: 11, color: "#9ca3af", marginBottom: 12 },
+  optionList: { display: "flex", flexDirection: "column", gap: 8, marginTop: 12 },
+  optionBtn: { display: "flex", alignItems: "flex-start", gap: 10, padding: "12px 14px", borderRadius: 10, borderWidth: "1.5px", borderStyle: "solid", borderColor: "#e5e7eb", background: "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit", fontSize: 13, color: "#374151", transition: "all .12s", lineHeight: 1.5 },
   optionBtnActive: { borderColor: "#16a34a", background: "#f0fdf4", color: "#166534" },
-  optionDot:    { fontSize: 14, color: "#9ca3af", flexShrink: 0, marginTop: 1, fontWeight: 700 },
+  optionDot: { fontSize: 14, color: "#9ca3af", flexShrink: 0, marginTop: 1, fontWeight: 700 },
   optionDotActive: { color: "#16a34a" },
 
-  surveyNav:    { display: "flex", justifyContent: "space-between", gap: 10 },
-  btnNavBack:   { padding: "10px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", cursor: "pointer", fontSize: 13, fontFamily: "inherit" },
-  btnNavNext:   { padding: "10px 24px", borderRadius: 8, border: "none", background: "#166534", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" },
-  btnSubmit:    { padding: "10px 24px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" },
-  skipHint:     { fontSize: 11, color: "#f59e0b", textAlign: "center" },
+  surveyNav: { display: "flex", justifyContent: "space-between", gap: 10 },
+  btnNavBack: { padding: "10px 20px", borderRadius: 8, border: "1px solid #e5e7eb", background: "#fff", color: "#374151", cursor: "pointer", fontSize: 13, fontFamily: "inherit" },
+  btnNavNext: { padding: "10px 24px", borderRadius: 8, border: "none", background: "#166534", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" },
+  btnSubmit: { padding: "10px 24px", borderRadius: 8, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "inherit" },
+  skipHint: { fontSize: 11, color: "#f59e0b", textAlign: "center" },
 
-  resultWrap:   { padding: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center" },
-  resultIcon:   { fontSize: 48 },
-  resultTitle:  { fontSize: 18, fontWeight: 800, color: "#166534" },
-  resultSub:    { fontSize: 12, color: "#6b7280" },
-  contextBox:   { background: "#0d1117", border: "1px solid #30363d", borderRadius: 10, padding: 14, width: "100%", maxWidth: 540, textAlign: "left" },
+  resultWrap: { padding: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center" },
+  resultIcon: { fontSize: 48 },
+  resultTitle: { fontSize: 18, fontWeight: 800, color: "#166534" },
+  resultSub: { fontSize: 12, color: "#6b7280" },
+  contextBox: { background: "#0d1117", border: "1px solid #30363d", borderRadius: 10, padding: 14, width: "100%", maxWidth: 540, textAlign: "left" },
   contextLabel: { fontSize: 10, color: "#7d8590", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 },
   contextValue: { fontFamily: "monospace", fontSize: 11, color: "#3fb950", wordBreak: "break-all", lineHeight: 1.7 },
-  contextNote:  { fontSize: 11, color: "#6b7280", marginTop: 8, lineHeight: 1.5 },
+  contextNote: { fontSize: 11, color: "#6b7280", marginTop: 8, lineHeight: 1.5 },
 
-  profileWrap:  { padding: 20 },
-  staleBanner:  { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#92400e", marginBottom: 14 },
-  profileGrid:  { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 14 },
-  profileCard:  { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px" },
+  profileWrap: { padding: 20 },
+  staleBanner: { background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 14px", fontSize: 13, color: "#92400e", marginBottom: 14 },
+  profileGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10, marginBottom: 14 },
+  profileCard: { background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10, padding: "12px 14px" },
   profileCardTitle: { fontSize: 13, fontWeight: 700, color: "#374151", marginBottom: 8 },
-  profileRow:   { display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f3f4f6", fontSize: 12 },
-  profileKey:   { color: "#9ca3af" },
-  profileVal:   { fontWeight: 600, color: "#374151" },
-  lastUpdated:  { fontSize: 11, color: "#9ca3af", textAlign: "center" },
+  profileRow: { display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: "1px solid #f3f4f6", fontSize: 12 },
+  profileKey: { color: "#9ca3af" },
+  profileVal: { fontWeight: 600, color: "#374151" },
+  lastUpdated: { fontSize: 11, color: "#9ca3af", textAlign: "center" },
 
-  loadingBox:   { display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: 40, color: "#6b7280", fontSize: 13 },
-  spinner:      { width: 18, height: 18, border: "2px solid #e5e7eb", borderTop: "2px solid #16a34a", borderRadius: "50%", animation: "spin .8s linear infinite" },
-  emptyBox:     { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "40px 24px", color: "#6b7280" },
+  loadingBox: { display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: 40, color: "#6b7280", fontSize: 13 },
+  spinner: { width: 18, height: 18, border: "2px solid #e5e7eb", borderTop: "2px solid #16a34a", borderRadius: "50%", animation: "spin .8s linear infinite" },
+  emptyBox: { display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "40px 24px", color: "#6b7280" },
 
-  btnGreen:     { padding: "10px 22px", background: "#166534", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  btnOutline:   { padding: "10px 22px", background: "#fff", border: "1px solid #166534", borderRadius: 8, color: "#166534", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
-  btnBack:      { padding: "6px 14px", background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 6, color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
-  btnProfile:   { padding: "6px 14px", background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 6, color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  btnGreen: { padding: "10px 22px", background: "#166534", border: "none", borderRadius: 8, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btnOutline: { padding: "10px 22px", background: "#fff", border: "1px solid #166534", borderRadius: 8, color: "#166534", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" },
+  btnBack: { padding: "6px 14px", background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 6, color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
+  btnProfile: { padding: "6px 14px", background: "rgba(255,255,255,.15)", border: "1px solid rgba(255,255,255,.3)", borderRadius: 6, color: "#fff", fontSize: 12, cursor: "pointer", fontFamily: "inherit" },
 };

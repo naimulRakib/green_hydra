@@ -5,14 +5,10 @@ import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import type { Hotspot } from './ImpactMap'
+import type { SatelliteWaterData } from '../actions/industrial'
 
 // Fix Leaflet broken default icons in Next.js
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-  iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-  shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-})
+// Moved to useEffect inside the component to prevent SSR errors
 
 const farmerIcon = L.divIcon({
   className: '',
@@ -112,6 +108,72 @@ function PlumeLayer({ hotspots }: { hotspots: Hotspot[] }) {
   return null
 }
 
+// Draws the satellite water quality grid blocks
+function SatelliteWaterLayer({ satelliteData }: { satelliteData: SatelliteWaterData[] }) {
+  const map = useMap()
+  const layersRef = useRef<L.Rectangle[]>([])
+
+  useEffect(() => {
+    layersRef.current.forEach(l => l.remove())
+    layersRef.current = []
+
+    satelliteData.forEach(cell => {
+      // Create a small grid cell (approx 1km x 1km box) around the center point
+      const offsetLat = 0.0045; // roughly 500m
+      const offsetLng = 0.0050; // roughly 500m
+      
+      const bounds: L.LatLngBoundsExpression = [
+        [cell.lat - offsetLat, cell.lng - offsetLng],
+        [cell.lat + offsetLat, cell.lng + offsetLng]
+      ]
+
+      // Determine color based on suspected pollution
+      const color = cell.suspected_pollution ? '#ef4444' : '#3b82f6'
+
+      const rect = L.rectangle(bounds, {
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.3,
+        weight: 1,
+        dashArray: '3 6'
+      })
+
+      // Add a popup with the satellite info
+      rect.bindPopup(`
+        <div style="min-width: 140px; padding: 2px;">
+          <div style="font-weight: bold; margin-bottom: 6px; border-bottom: 1px solid #ccc; padding-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+            <span>🛰️</span> স্যাটেলাইট ডেটা
+          </div>
+          <div style="font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between;">
+            <span style="color: #666;">turbidity:</span>
+            <b>${cell.turbidity.toFixed(1)}</b>
+          </div>
+          <div style="font-size: 11px; margin-bottom: 4px; display: flex; justify-content: space-between;">
+            <span style="color: #666;">রঙ অনুমান:</span>
+            <b>${cell.color_estimate}</b>
+          </div>
+          <div style="font-size: 11px; display: flex; justify-content: space-between; border-top: 1px solid #eee; padding-top: 4px;">
+            <span style="color: #666;">দূষণ সম্ভাবনা:</span>
+            <b style="color: ${cell.suspected_pollution ? '#dc2626' : '#16a34a'};">
+              ${cell.suspected_pollution ? 'উচ্চ ⚠️' : 'স্বাভাবিক ✓'}
+            </b>
+          </div>
+        </div>
+      `)
+      
+      rect.addTo(map)
+      layersRef.current.push(rect)
+    })
+
+    return () => {
+      layersRef.current.forEach(l => l.remove())
+      layersRef.current = []
+    }
+  }, [satelliteData, map])
+
+  return null
+}
+
 // Wind arrow marker (non-interactive)
 function WindArrow({
   lat, lng, windToDeg, speedKmh,
@@ -164,6 +226,7 @@ const RISK_COLOR: Record<string, string> = {
 
 interface Props {
   hotspots:     Hotspot[]
+  satelliteData?: SatelliteWaterData[]
   farmerLat:    number
   farmerLng:    number
   windFromDeg:  number
@@ -171,8 +234,21 @@ interface Props {
 }
 
 export default function LeafletMapInner({
-  hotspots, farmerLat, farmerLng, windFromDeg, windSpeedKmh,
+  hotspots, satelliteData = [], farmerLat, farmerLng, windFromDeg, windSpeedKmh,
 }: Props) {
+  useEffect(() => {
+    // Fix Leaflet broken default icons in Next.js (client-side only)
+    if (typeof window !== 'undefined' && L.Icon?.Default?.prototype) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (L.Icon.Default.prototype as any)._getIconUrl
+      L.Icon.Default.mergeOptions({
+        iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+        iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+        shadowUrl:     'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      })
+    }
+  }, [])
+
   const windToDeg = (windFromDeg + 180) % 360
 
   return (
@@ -187,6 +263,7 @@ export default function LeafletMapInner({
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
 
+      <SatelliteWaterLayer satelliteData={satelliteData} />
       <PlumeLayer hotspots={hotspots} />
 
       <WindArrow

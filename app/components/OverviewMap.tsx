@@ -24,6 +24,8 @@
  */
 
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
+import WaterSourceMapLayer from './WaterSourceMapLayer'
+import type { WaterSource } from '@/app/types/water'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -126,22 +128,41 @@ function isInPlumeClient(
 }
 
 /** Compute centroid of a GeoJSON polygon (first ring only) as [lat, lng] */
-function geojsonCentroid(geojson: any): [number, number] | null {
+function geojsonCentroid(geojson: unknown): [number, number] | null {
   try {
     let coords: [number, number][] = []
-    const g = geojson?.geometry ?? geojson
-    if (g?.type === 'Polygon') coords = g.coordinates[0]
-    else if (g?.type === 'MultiPolygon') coords = g.coordinates[0][0]
-    else if (g?.type === 'GeometryCollection') {
-      const poly = g.geometries?.find((x: any) => x.type === 'Polygon')
-      if (poly) coords = poly.coordinates[0]
+
+    const base = geojson && typeof geojson === 'object' ? (geojson as Record<string, unknown>) : null
+    const geom = base?.geometry
+    const g = geom && typeof geom === 'object' ? (geom as Record<string, unknown>) : base
+
+    const type = g?.type
+    const coordinates = g?.coordinates
+
+    if (type === 'Polygon' && Array.isArray(coordinates) && Array.isArray(coordinates[0])) {
+      coords = coordinates[0] as [number, number][]
+    } else if (type === 'MultiPolygon' && Array.isArray(coordinates) && Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+      coords = coordinates[0][0] as [number, number][]
+    } else if (type === 'GeometryCollection') {
+      const geometries = g?.geometries
+      const poly = Array.isArray(geometries)
+        ? (geometries.find((x) => (x as { type?: unknown })?.type === 'Polygon') as Record<string, unknown> | undefined)
+        : undefined
+
+      const polyCoords = poly?.coordinates
+      if (Array.isArray(polyCoords) && Array.isArray(polyCoords[0])) {
+        coords = polyCoords[0] as [number, number][]
+      }
     }
+
     if (coords.length === 0) return null
     // GeoJSON is [lng, lat]
     const lng = coords.reduce((s, c) => s + c[0], 0) / coords.length
     const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length
     return [lat, lng]
-  } catch { return null }
+  } catch {
+    return null
+  }
 }
 
 /** Compute pie-slice wedge polygon for Leaflet */
@@ -197,41 +218,79 @@ interface Props {
   hotspots:     HotspotOverview[]
   plots:        LandPlotOverview[]
   communitySpray: CommunitySprayPlot[]
+  waterSources: WaterSource[]
 }
 
 const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   farmerId, farmerLat, farmerLng,
   windFromDeg, windSpeedKmh,
-  hotspots = [], plots = [], communitySpray = [],
+  hotspots = [], plots = [], communitySpray = [], waterSources = [],
 }, ref) {
+  void farmerId;
   // ── local GPS state (overrides server-saved location after live GPS / manual) ─
   const [localLat, setLocalLat] = useState<number | null>(farmerLat)
   const [localLng, setLocalLng] = useState<number | null>(farmerLng)
   const [manualLat, setManualLat] = useState(farmerLat?.toFixed(6) ?? '')
   const [manualLng, setManualLng] = useState(farmerLng?.toFixed(6) ?? '')
   const [gpsLoading, setGpsLoading] = useState(false)
-  const [mapReady, setMapReady] = useState(false)
+  const [mapReady, setMapReady] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return !!(window as unknown as { L?: unknown }).L
+  })
   const [mapInitialized, setMapInitialized] = useState(false)
+  const [leafletMap, setLeafletMap] = useState<LeafletMapLike | null>(null)
+  const [activeLandId, setActiveLandId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  type LeafletMapLike = {
+    remove: () => void
+    removeLayer: (layer: unknown) => void
+    fitBounds: (...args: unknown[]) => void
+    flyTo: (...args: unknown[]) => void
+  }
+
+  type LeafletGlobal = {
+    map: (el: HTMLElement, opts: Record<string, unknown>) => LeafletMapLike
+    tileLayer: (url: string, opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => void }
+    geoJSON: (geo: unknown, opts?: Record<string, unknown>) => {
+      bindPopup: (html: string, opts?: Record<string, unknown>) => unknown
+      bindTooltip?: (html: string, opts?: Record<string, unknown>) => unknown
+      addTo: (map: LeafletMapLike) => unknown
+      on?: (event: string, handler: () => void) => void
+      getBounds?: () => { isValid: () => boolean }
+      openPopup?: () => void
+    }
+    divIcon: (opts: Record<string, unknown>) => unknown
+    marker: (latlng: [number, number], opts: Record<string, unknown>) => {
+      bindPopup: (html: string, opts?: Record<string, unknown>) => unknown
+      addTo: (map: LeafletMapLike) => unknown
+    }
+    circle: (latlng: [number, number], opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => unknown }
+    polygon: (latlngs: [number, number][], opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => unknown }
+    Icon: { Default: { prototype: unknown; mergeOptions: (opts: Record<string, unknown>) => void } }
+  }
+
   const mapDivRef    = useRef<HTMLDivElement>(null)
-  const mapRef       = useRef<any>(null)
-  const farmMarkerRef = useRef<any>(null)
-  const farmCircleRef = useRef<any>(null)
-  const plotLayersRef    = useRef<any[]>([])
-  const plumeLayers      = useRef<any[]>([])
-  const plotLayerMapRef        = useRef<Map<string, any>>(new Map())
-  const communitySprayLayersRef = useRef<any[]>([])
+  const mapRef       = useRef<LeafletMapLike | null>(null)
+  const farmMarkerRef = useRef<unknown>(null)
+  const farmCircleRef = useRef<unknown>(null)
+  const plotLayersRef    = useRef<unknown[]>([])
+  const plumeLayers      = useRef<unknown[]>([])
+  const plotLayerMapRef        = useRef<Map<string, unknown>>(new Map())
+  const communitySprayLayersRef = useRef<unknown[]>([])
 
   // ── Load Leaflet once (DOM-based check, safe across HMR / StrictMode) ───────
   useEffect(() => {
-    // Already fully loaded
-    if ((window as any).L) { setMapReady(true); return }
+    // Already fully loaded (handled by initial state)
+    if ((window as unknown as { L?: unknown }).L) return
 
     // Script already injected by a previous mount — just wait for it
     if (document.getElementById('leaflet-js')) {
       const poll = setInterval(() => {
-        if ((window as any).L) { clearInterval(poll); setMapReady(true) }
+        if ((window as unknown as { L?: unknown }).L) {
+          clearInterval(poll)
+          setMapReady(true)
+        }
       }, 50)
       return () => clearInterval(poll)
     }
@@ -272,11 +331,12 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   // ── Init map ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapDivRef.current) return
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
+    if (!L) return
 
-    if (mapRef.current) { try { mapRef.current.remove() } catch (_) {} }
+    if (mapRef.current) { try { mapRef.current.remove() } catch {} }
 
-    delete (L.Icon.Default.prototype as any)._getIconUrl
+    delete (L.Icon.Default.prototype as Record<string, unknown>)._getIconUrl
     L.Icon.Default.mergeOptions({
       iconUrl:       'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
       iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -286,34 +346,42 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
     const center: [number, number] = (localLat && localLng)
       ? [localLat, localLng] : [23.8103, 90.2700]
 
-    const map = L.map(mapDivRef.current, { center, zoom: 13, zoomControl: true })
+    const map = L.map(mapDivRef.current as HTMLElement, { center, zoom: 13, zoomControl: true })
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors', maxZoom: 19,
     }).addTo(map)
 
     mapRef.current = map
-    setMapInitialized(true)
+
+    setTimeout(() => {
+      setMapInitialized(true)
+      setLeafletMap(map)
+    }, 0)
 
     return () => {
-      setMapInitialized(false)
+      // Avoid setState directly in effect cleanup
+      setTimeout(() => {
+        setMapInitialized(false)
+        setLeafletMap(null)
+      }, 0)
       // Null ref FIRST so any in-flight layer effects see null and bail out
       mapRef.current = null
       plotLayersRef.current = []
       plumeLayers.current   = []
       communitySprayLayersRef.current = []
-      try { map.remove() } catch (_) {}
+      try { map.remove() } catch {}
     }
   }, [mapReady])
 
   // ── Farm marker + reach circle ────────────────────────────────────
   useEffect(() => {
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     const map = mapRef.current
     if (!L || !map) return
 
     // Remove old
-    if (farmMarkerRef.current) { try { map.removeLayer(farmMarkerRef.current) } catch (_) {} }
-    if (farmCircleRef.current) { try { map.removeLayer(farmCircleRef.current) } catch (_) {} }
+    if (farmMarkerRef.current) { try { map.removeLayer(farmMarkerRef.current) } catch {} }
+    if (farmCircleRef.current) { try { map.removeLayer(farmCircleRef.current) } catch {} }
 
     if (!localLat || !localLng) return
 
@@ -335,11 +403,11 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 
   // ── Plot layers with per-land wind risk ───────────────────────────
   useEffect(() => {
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     const map = mapRef.current
     if (!L || !map) return
 
-    plotLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch (_) {} })
+    plotLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch {} })
     plotLayersRef.current = []
     plotLayerMapRef.current.clear()
 
@@ -368,7 +436,8 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
           }
         }
 
-        const fillColor = landInAnyPlume
+        const isSelected = plot.land_id === activeLandId
+        const fillColor = (landInAnyPlume || isSelected)
           ? '#ef4444'
           : RISK_COLOR[plot.risk_level] ?? '#22c55e'
 
@@ -378,31 +447,46 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
           ? (plot.last_survey_days <= 7 ? '✓ এই সপ্তাহ' : `${plot.last_survey_days}দিন আগে`)
           : 'সার্ভে নেই'
 
-        const tooltipHtml =
-          `<div style="min-width:160px;font-family:sans-serif;font-size:12px">` +
-          `<strong style="font-size:13px">${plot.land_name_bn || plot.land_name}</strong><br/>` +
-          `${CROP_LABEL[plot.crop_id ?? ''] ?? (plot.crop_id ?? '')}` +
-          (plot.area_bigha ? ` · ${plot.area_bigha.toFixed(2)} বিঘা` : '') + `<br/>` +
-          (phStr ? `🧪 ${phStr}<br/>` : '') +
+        const popupHtml =
+          `<div style="min-width:200px;font-family:sans-serif;font-size:13px;color:#374151;">` +
+          `<div style="border-bottom:1px solid #e5e7eb;padding-bottom:6px;margin-bottom:6px;">` +
+          `<div style="display:flex;justify-content:space-between;align-items:flex-start;">` +
+          `  <strong style="font-size:15px;color:#111827;">${plot.land_name_bn || plot.land_name}</strong>` +
+          `  <span style="background:#dcfce7;color:#166534;font-size:10px;padding:2px 6px;border-radius:9999px;font-weight:600;">🌾 আপনার জমি</span>` +
+          `</div>` +
+          `<span style="color:#6b7280;font-size:12px;">${CROP_LABEL[plot.crop_id ?? ''] ?? (plot.crop_id ?? 'ফসল নির্দিষ্ট নয়')} ` +
+          (plot.area_bigha ? ` · ${plot.area_bigha.toFixed(2)} বিঘা` : '') + `</span>` +
+          `</div>` +
+          // Details Grid
+          `<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;">` +
+          `<div><span style="color:#9ca3af;font-size:11px;">মাটির pH</span><br/><b>${phStr || 'অজানা'}</b></div>` +
+          `<div><span style="color:#9ca3af;font-size:11px;">আর্দ্রতা</span><br/><b>${plot.soil_moisture || 'অজানা'}</b></div>` +
+          `<div><span style="color:#9ca3af;font-size:11px;">পোকা মাকড়</span><br/><b>${plot.pest_pressure || 'স্বাভাবিক'}</b></div>` +
+          `<div><span style="color:#9ca3af;font-size:11px;">শেষ সার্ভে</span><br/><b>${surveyAge}</b></div>` +
+          `</div>` +
+          // Warnings / AI Context
           (plot.spray_active && plot.chemical_name
-            ? `⚠️ স্প্রে: ${plot.chemical_name}<br/>` : '') +
+            ? `<div style="background:#fefce8;border:1px solid #fef08a;color:#854d0e;padding:6px;border-radius:6px;font-size:11px;margin-bottom:6px;">⚠️ <b>সক্রিয় স্প্রে:</b> ${plot.chemical_name}</div>` 
+            : '') +
           (landInAnyPlume
-            ? `<span style="color:#dc2626">🏭 দূষণ ঝুঁকি: ${worstFactory}</span><br/>` : '') +
-          (plot.pest_pressure
-            ? `🐛 পোকার চাপ: ${plot.pest_pressure}<br/>` : '') +
-          `📋 ${surveyAge}` +
+            ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;padding:6px;border-radius:6px;font-size:11px;margin-bottom:6px;">🏭 <b>দূষণ সতর্কতা:</b> এই জমিটি ${worstFactory} এর ধোঁয়ার নিচে রয়েছে।</div>` 
+            : '') +
+          // Recommendation CTA
+          `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280;">` +
+          `💡 বিস্তারিত জানতে ড্যাশবোর্ডের স্ক্যানার ব্যবহার করুন।` +
+          `</div>` +
           `</div>`
 
         const layer = L.geoJSON(geo, {
           style: {
-            color:       landInAnyPlume ? '#dc2626' : (fillColor),
+            color:       (landInAnyPlume || isSelected) ? '#dc2626' : (fillColor),
             fillColor,
-            fillOpacity: plot.spray_active ? 0.40 : 0.25,
-            weight:      landInAnyPlume ? 2.5 : 2,
+            fillOpacity: (plot.spray_active || isSelected) ? 0.40 : 0.20,
+            weight:      (landInAnyPlume || isSelected) ? 4 : 3,
             dashArray:   plot.spray_active ? undefined : '4 4',
           },
         })
-          .bindTooltip(tooltipHtml, { permanent: false, direction: 'top', sticky: true })
+          .bindPopup(popupHtml, { minWidth: 220 })
           .addTo(map)
 
         plotLayersRef.current.push(layer)
@@ -426,17 +510,17 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
           plotLayersRef.current.push(label)
         }
 
-      } catch (_) {}
+      } catch {}
     })
-  }, [plots, hotspots, windFromDeg, windSpeedKmh, mapInitialized])
+  }, [plots, hotspots, windFromDeg, windSpeedKmh, activeLandId, mapInitialized])
 
   // ── Community spray layers (other farmers' active sprays) ─────────
   useEffect(() => {
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     const map = mapRef.current
     if (!L || !map) return
 
-    communitySprayLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch (_) {} })
+    communitySprayLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch {} })
     communitySprayLayersRef.current = []
 
     communitySpray.forEach(sp => {
@@ -468,17 +552,17 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
           }).addTo(map)
           communitySprayLayersRef.current.push(bufLayer)
         }
-      } catch (_) {}
+      } catch {}
     })
   }, [communitySpray, mapInitialized])
 
   // ── Industrial plume layers ───────────────────────────────────────
   useEffect(() => {
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     const map = mapRef.current
     if (!L || !map) return
 
-    plumeLayers.current.forEach(l => { try { map.removeLayer(l) } catch (_) {} })
+    plumeLayers.current.forEach(l => { try { map.removeLayer(l) } catch {} })
     plumeLayers.current = []
 
     hotspots.forEach(h => {
@@ -569,33 +653,35 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   // ── Expose flyToPlot to parent via ref ──────────────────────────
   useImperativeHandle(ref, () => ({
     flyToPlot(plot: LandPlotOverview) {
-      const L = (window as any).L
+      setActiveLandId(plot.land_id)
+      const L = (window as unknown as { L?: LeafletGlobal }).L
       if (!L || !mapRef.current) return
       const map = mapRef.current
 
       // Try stored layer first (instant, no re-parse)
       const layer = plotLayerMapRef.current.get(plot.land_id)
-      if (layer?.getBounds) {
+      const layerWithBounds = layer as unknown as {
+        getBounds?: () => { isValid: () => boolean }
+        openPopup?: () => void
+      }
+      if (layerWithBounds?.getBounds) {
         try {
-          const bounds = layer.getBounds()
+          const bounds = layerWithBounds.getBounds()
           if (bounds.isValid()) {
             map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18, animate: true, duration: 0.7 })
-            // Yellow flash then restore
-            const orig = { color: layer.options?.color, fillOpacity: layer.options?.fillOpacity, weight: layer.options?.weight }
-            layer.setStyle({ color: '#facc15', fillOpacity: 0.6, weight: 4 })
-            setTimeout(() => { try { layer.setStyle(orig) } catch (_) {} }, 900)
+            layerWithBounds.openPopup?.()
             return
           }
-        } catch (_) {}
+        } catch {}
       }
       // Fallback: parse GeoJSON fresh
       if (!plot.boundary_geojson) return
       try {
         const geo = typeof plot.boundary_geojson === 'string' ? JSON.parse(plot.boundary_geojson) : plot.boundary_geojson
         const tmp = L.geoJSON(geo)
-        const bounds = tmp.getBounds()
+        const bounds = (tmp as unknown as { getBounds: () => { isValid: () => boolean } }).getBounds()
         if (bounds.isValid()) map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18, animate: true, duration: 0.7 })
-      } catch (_) {}
+      } catch {}
     }
   }))
 
@@ -741,6 +827,11 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
       </div>
 
       {/* ── Map ── */}
+      <WaterSourceMapLayer
+        map={leafletMap}
+        waterSources={waterSources}
+        mapInitialized={mapInitialized}
+      />
       <div ref={mapDivRef} style={{ height: 460, width: '100%', zIndex: 1 }} />
 
       {/* ── Legend ── */}
@@ -837,4 +928,3 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 export default OverviewMap
 
 // pg_dump "postgresql://postgres:GaMiNgNIR58483@db.mktxhuzpnurkxluoiggu.supabase.co:5432/postgres" --schema-only > supabase_schema.sql
-

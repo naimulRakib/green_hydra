@@ -172,9 +172,10 @@ export async function fetchAndSaveWeather(
       success: true,
       message: `আবহাওয়া আপডেট হয়েছে! (${consecutiveWetDays} দিন একটানা বৃষ্টি)`,
     };
-  } catch (err: any) {
-    console.error("[Weather] fetchAndSaveWeather error:", err.message);
-    return { success: false, message: `আবহাওয়া আপডেট ব্যর্থ: ${err.message}` };
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[Weather] fetchAndSaveWeather error:", message);
+    return { success: false, message: `আবহাওয়া আপডেট ব্যর্থ: ${message}` };
   }
 }
 
@@ -190,10 +191,17 @@ export async function syncLiveGPSAndWeather(
   const { data: { user }, error: authError } = await supabase.auth.getUser();
   if (authError || !user) throw new Error("লগইন করুন");
 
-  // Nearest zone lookup from DB
-  const { data: zoneRow } = await supabase.rpc("snap_to_zone", {
-    p_lat: lat, p_lng: lng,
-  }).maybeSingle().catch(() => ({ data: null }));
+  // Nearest zone lookup from DB — non-fatal fallback
+  type ZoneSnap = { zone_id?: string; zone_name_bn?: string } | null;
+  let zoneRow: ZoneSnap = null;
+  try {
+    const { data } = await supabase.rpc("snap_to_zone", {
+      p_lat: lat, p_lng: lng,
+    }).maybeSingle();
+    zoneRow = (data ?? null) as ZoneSnap;
+  } catch {
+    // Non-fatal — fall back to default zone
+  }
 
   const zoneId = zoneRow?.zone_id ?? "dhaka-savar";
 

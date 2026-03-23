@@ -8,9 +8,10 @@ interface Props {
   // action is a server action passed from the parent — allows this component
   // to stay generic without knowing which server action to call directly.
   action: () => Promise<{ success: boolean; message: string }>
+  satelliteAction?: () => Promise<{ success: boolean; error?: string }>
 }
 
-export default function RefreshWeatherButton({ action }: Props) {
+export default function RefreshWeatherButton({ action, satelliteAction }: Props) {
   const [state,  setState]  = useState<State>('idle')
   const [errMsg, setErrMsg] = useState('')
 
@@ -20,16 +21,28 @@ export default function RefreshWeatherButton({ action }: Props) {
     setErrMsg('')
 
     try {
-      const result = await action()
-      if (!result.success) throw new Error(result.message)
+      type ActionResult = { success: boolean; message?: string; error?: string }
+
+      const promises: Array<Promise<ActionResult>> = [action()]
+      if (satelliteAction) promises.push(satelliteAction() as Promise<ActionResult>)
+
+      const results = await Promise.all(promises)
+
+      // Check if the primary weather action failed
+      const primary = results[0]
+      if (!primary.success) {
+        throw new Error(primary.message ?? 'আবহাওয়া আপডেট করতে সমস্যা হয়েছে')
+      }
+
       setState('success')
       setTimeout(() => setState('idle'), 2500)
-    } catch (err: any) {
-      setErrMsg(err.message ?? 'আবহাওয়া আপডেট করতে সমস্যা হয়েছে')
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setErrMsg(message || 'আবহাওয়া আপডেট করতে সমস্যা হয়েছে')
       setState('error')
       setTimeout(() => setState('idle'), 4000)
     }
-  }, [action, state])
+  }, [action, satelliteAction, state])
 
   return (
     <div className="flex flex-col items-end gap-1">

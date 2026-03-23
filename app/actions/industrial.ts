@@ -4,6 +4,34 @@ import { createClient } from '../utils/supabase/server'
 import type { Hotspot } from '../components/ImpactMap'
 import type { CommunitySprayPlot } from '../components/OverviewMap'
 
+export interface SatelliteWaterData {
+  id: string
+  lat: number
+  lng: number
+  water_quality_index: number
+  turbidity: number
+  color_estimate: string
+  suspected_pollution: boolean
+  distance_km: number
+}
+
+type HazardRow = {
+  hotspot_id:        string
+  factory_name:      string
+  factory_name_bn:   string
+  industry_type:     string
+  factory_lat:       number
+  factory_lng:       number
+  distance_km:       number
+  max_plume_km:      number
+  plume_cone_deg:    number
+  wind_to_deg:       number
+  is_in_plume:       boolean
+  primary_pollutant: string
+  risk_level:        string
+  remedy_id?:        string | null
+}
+
 export async function getHotspotsWithPlume(
   farmerLat:    number,
   farmerLng:    number,
@@ -31,27 +59,28 @@ export async function getHotspotsWithPlume(
 
   if (!data || data.length === 0) return []
 
-  return (data as any[])
+  const rows = (data ?? []) as HazardRow[]
+  return rows
     // Guard: skip rows with missing or invalid coords
     .filter(row =>
       typeof row.factory_lat === 'number' && isFinite(row.factory_lat) &&
       typeof row.factory_lng === 'number' && isFinite(row.factory_lng)
     )
     .map(row => ({
-      hotspot_id:        row.hotspot_id        as string,
-      factory_name:      row.factory_name      as string,
-      factory_name_bn:   row.factory_name_bn   as string,
-      industry_type:     row.industry_type     as string,
-      factory_lat:       row.factory_lat       as number,
-      factory_lng:       row.factory_lng       as number,
-      distance_km:       row.distance_km       as number,
-      max_plume_km:      row.max_plume_km      as number,
-      plume_cone_deg:    row.plume_cone_deg    as number,
-      wind_to_deg:       row.wind_to_deg       as number,
-      is_in_plume:       row.is_in_plume       as boolean,
-      primary_pollutant: row.primary_pollutant as string,
-      risk_level:        row.risk_level        as string,
-      remedy_id:         (row.remedy_id        as string) ?? null,
+      hotspot_id:        row.hotspot_id,
+      factory_name:      row.factory_name,
+      factory_name_bn:   row.factory_name_bn,
+      industry_type:     row.industry_type,
+      factory_lat:       row.factory_lat,
+      factory_lng:       row.factory_lng,
+      distance_km:       row.distance_km,
+      max_plume_km:      row.max_plume_km,
+      plume_cone_deg:    row.plume_cone_deg,
+      wind_to_deg:       row.wind_to_deg,
+      is_in_plume:       row.is_in_plume,
+      primary_pollutant: row.primary_pollutant,
+      risk_level:        row.risk_level,
+      remedy_id:         row.remedy_id ?? null,
     }))
 }
 
@@ -68,7 +97,7 @@ export async function getCommunitySprayForLands(
   const { data, error } = await supabase.rpc('get_community_spray_risk_for_lands', {
     p_farmer_id: farmerId,
     p_radius_km: radiusKm,
-  })
+    })
 
   if (error) {
     console.error('[Industrial] get_community_spray_risk_for_lands error:', error.message)
@@ -76,4 +105,63 @@ export async function getCommunitySprayForLands(
   }
 
   return (data ?? []) as CommunitySprayPlot[]
+}
+
+export async function getSatelliteWaterData(
+  lat: number,
+  lng: number,
+  radiusKm: number = 15.0
+): Promise<SatelliteWaterData[]> {
+  if (!isFinite(lat) || !isFinite(lng)) return []
+
+  const supabase = await createClient()
+
+  const { data, error } = await supabase.rpc('get_satellite_water_data', {
+    p_lat: lat,
+    p_lng: lng,
+    p_radius_km: radiusKm,
+  })
+
+  if (error) {
+    console.error('[Industrial] get_satellite_water_data error:', error.message)
+    return []
+  }
+
+  return (data ?? []) as SatelliteWaterData[]
+}
+
+/**
+ * 🛰️ MOCK SATELLITE INGESTION SCRIPT
+ * In production, this would be a Python cron job calling Sentinel-2 APIs
+ * For now, this Next.js Server Action acts as the "External System"
+ */
+export async function fetchSatelliteWaterData(lat: number, lng: number) {
+  if (!isFinite(lat) || !isFinite(lng)) return { success: false, error: 'Invalid coordinates' }
+
+  const supabase = await createClient()
+  
+  // 1. Generate Synthetic Data (Mocking a real API response like Sentinel Hub)
+  const isPolluted = Math.random() > 0.5 // 50% chance of pollution for demo
+  
+  const mockEarthObservationResponse = {
+    grid_cell_id: `grid_${Math.round(lat*100)}_${Math.round(lng*100)}`,
+    location: `SRID=4326;POINT(${lng} ${lat})`,
+    water_quality_index: isPolluted ? (Math.random() * 40) : (60 + Math.random() * 40), // 0-100 scale
+    turbidity: isPolluted ? (50 + Math.random() * 100) : (5 + Math.random() * 20), // NTU
+    chlorophyll: isPolluted ? (20 + Math.random() * 80) : (2 + Math.random() * 10), // ug/L
+    suspected_pollution: isPolluted,
+    color_estimate: isPolluted ? (Math.random() > 0.5 ? 'Dark Red/Black' : 'Unnatural Green') : 'Clear/Blue',
+  }
+
+  // 2. Insert into the database
+  const { error } = await supabase
+    .from('satellite_water_data')
+    .insert([mockEarthObservationResponse])
+
+  if (error) {
+    console.error('[Satellite] Failed to ingest data:', error.message)
+    return { success: false, error: error.message }
+  }
+
+  return { success: true, data: mockEarthObservationResponse }
 }

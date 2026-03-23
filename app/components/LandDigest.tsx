@@ -10,6 +10,7 @@
 import { useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { OverviewMapHandle, LandPlotOverview, HotspotOverview, CommunitySprayPlot } from './OverviewMap'
+import type { WaterSource } from '@/app/types/water'
 
 // forwardRef: true removed — invalid in Next.js 13+, refs work automatically
 const OverviewMapDynamic = dynamic(() => import('./OverviewMap'), {
@@ -44,11 +45,11 @@ const PEST_LABEL: Record<string, string> = { medium: 'মাঝারি', high:
 const PEST_COLOR: Record<string, string> = { medium: 'text-amber-600', high: 'text-red-600' }
 
 interface ProfileData {
-  land_id:              string
-  soil_ph_status?:      string | null
-  pest_pressure?:       string | null
-  water_color_status?:  string | null
-  recent_smoke_exposure?: boolean
+  land_id:        string
+  soil_ph?:       string | null
+  pest_level?:    string | null
+  water_color?:   string | null
+  smoke_exposure?: boolean
 }
 
 interface RiskPlot {
@@ -74,6 +75,7 @@ interface Props {
   activeSprays:     number
   communitySpray:   CommunitySprayPlot[]
   riskPlots:        RiskPlot[]
+  waterSources:     WaterSource[]
 }
 
 export default function LandDigest({
@@ -81,7 +83,7 @@ export default function LandDigest({
   windFromDeg, windSpeedKmh,
   hotspots, plots,
   profileMap, completedLandIds,
-  totalBigha, activeSprays, riskPlots, communitySpray,
+  totalBigha, activeSprays, riskPlots, communitySpray, waterSources,
 }: Props) {
   const mapRef = useRef<OverviewMapHandle>(null)
 
@@ -111,6 +113,7 @@ export default function LandDigest({
           hotspots={hotspots}
           plots={plots}
           communitySpray={communitySpray}
+          waterSources={waterSources}
         />
       </div>
 
@@ -165,7 +168,7 @@ export default function LandDigest({
               const prof      = profileMap[plot.land_id]
               const surveyed  = completedLandIds.includes(plot.land_id)
               const riskColor = ({ red: '#ef4444', yellow: '#f59e0b', green: '#22c55e' } as Record<string, string>)[plot.risk_level] ?? '#22c55e'
-              const phStatus  = prof?.soil_ph_status
+              const phStatus  = prof?.soil_ph
 
               return (
                 <div key={plot.land_id} className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
@@ -209,17 +212,17 @@ export default function LandDigest({
                           {PH_LABEL[phStatus] ?? phStatus} (~{PH_VALUE[phStatus]})
                         </span></>
                       )}
-                      {prof?.pest_pressure && prof.pest_pressure !== 'low' && (
+                      {prof?.pest_level && prof.pest_level !== 'Low' && (
                         <><span className="text-gray-400">পোকার চাপ</span>
-                        <span className={`font-semibold ${PEST_COLOR[prof.pest_pressure] ?? 'text-gray-600'}`}>
-                          {PEST_LABEL[prof.pest_pressure] ?? prof.pest_pressure}
+                        <span className={`font-semibold ${PEST_COLOR[prof.pest_level.toLowerCase()] ?? 'text-gray-600'}`}>
+                          {PEST_LABEL[prof.pest_level.toLowerCase()] ?? prof.pest_level}
                         </span></>
                       )}
-                      {prof?.water_color_status && prof.water_color_status !== 'clear' && (
+                      {prof?.water_color && prof.water_color !== 'clear' && (
                         <><span className="text-gray-400">পানির রঙ</span>
-                        <span className="text-amber-600 font-semibold">{prof.water_color_status}</span></>
+                        <span className="text-amber-600 font-semibold">{prof.water_color}</span></>
                       )}
-                      {prof?.recent_smoke_exposure && (
+                      {prof?.smoke_exposure && (
                         <><span className="text-gray-400">ধোঁয়া</span><span className="text-red-600 font-semibold">সাম্প্রতিক</span></>
                       )}
                     </div>

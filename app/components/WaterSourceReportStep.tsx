@@ -38,13 +38,59 @@ export default function WaterSourceReportStep({
   const [pickedLng,  setPickedLng]  = useState<number | null>(null)
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState<string | null>(null)
+  const [gpsLoading, setGpsLoading] = useState(false)
+  const [gpsError,   setGpsError]   = useState<string | null>(null)
+  const [manualLat,  setManualLat]  = useState('')
+  const [manualLng,  setManualLng]  = useState('')
+  const [locMode,    setLocMode]    = useState<'map' | 'manual'>('map')
 
   const isTubewell  = waterType === 'tubewell'
-  const needsMap    = waterType && !isTubewell
   const hasLocation = isTubewell || (pickedLat && pickedLng)
   const canSubmit   = waterType && waterColor && hasLocation
 
   const handlePick = (lat: number, lng: number) => {
+    setPickedLat(lat)
+    setPickedLng(lng)
+    setManualLat(lat.toFixed(6))
+    setManualLng(lng.toFixed(6))
+  }
+
+  const handleLiveGPS = () => {
+    if (!navigator.geolocation) {
+      setGpsError('আপনার ব্রাউজার GPS সমর্থন করে না।')
+      return
+    }
+    setGpsLoading(true)
+    setGpsError(null)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords
+        setPickedLat(latitude)
+        setPickedLng(longitude)
+        setManualLat(latitude.toFixed(6))
+        setManualLng(longitude.toFixed(6))
+        setGpsLoading(false)
+      },
+      () => {
+        setGpsError('লোকেশন পাওয়া যায়নি। পারমিশন দিন বা ম্যানুয়ালি দিন।')
+        setGpsLoading(false)
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    )
+  }
+
+  const handleManualCoord = () => {
+    const lat = parseFloat(manualLat)
+    const lng = parseFloat(manualLng)
+    if (isNaN(lat) || isNaN(lng)) {
+      setGpsError('সঠিক কোঅর্ডিনেট দিন (যেমন: 23.8566, 90.2677)')
+      return
+    }
+    if (lat < 20.5 || lat > 26.7 || lng < 87.9 || lng > 92.7) {
+      setGpsError('অবস্থান বাংলাদেশের মধ্যে হতে হবে')
+      return
+    }
+    setGpsError(null)
     setPickedLat(lat)
     setPickedLng(lng)
   }
@@ -116,22 +162,119 @@ export default function WaterSourceReportStep({
         </div>
       </div>
 
-      {/* Map picker — not for tubewell */}
-      {needsMap && (
-        <WaterSourcePicker
-          defaultLat={farmerLat}
-          defaultLng={farmerLng}
-          onPick={handlePick}
-          pickedLat={pickedLat}
-          pickedLng={pickedLng}
-        />
-      )}
+      {/* Location picker — visible whenever a water type is selected */}
+      {waterType && (
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-gray-400 uppercase tracking-wider">
+            📍 পানির উৎসের অবস্থান
+          </p>
 
-      {/* Tubewell note */}
-      {isTubewell && (
-        <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl
-                        p-3 text-xs text-blue-300">
-          💧 নলকূপের জন্য আপনার বর্তমান অবস্থান ব্যবহার করা হবে।
+          {/* GPS + Manual row */}
+          <div className="flex gap-2">
+            {/* Live GPS button */}
+            <button
+              type="button"
+              onClick={handleLiveGPS}
+              disabled={gpsLoading}
+              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold
+                border transition-all flex-1
+                ${ gpsLoading
+                  ? 'bg-blue-500/10 border-blue-500/20 text-blue-400 cursor-wait'
+                  : 'bg-blue-600/20 border-blue-500/40 text-blue-300 hover:bg-blue-600/30 active:scale-95'}`}
+            >
+              {gpsLoading ? (
+                <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3"/>
+                  <path className="opacity-80" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                </svg>
+              ) : '📡'}
+              {gpsLoading ? 'খুঁজছে...' : 'লাইভ লোকেশন'}
+            </button>
+
+            {/* Toggle manual mode */}
+            <button
+              type="button"
+              onClick={() => setLocMode(m => m === 'map' ? 'manual' : 'map')}
+              className="px-3 py-2 rounded-xl text-xs font-bold border
+                bg-white/5 border-white/10 text-gray-400
+                hover:border-white/20 hover:text-gray-200 transition-all"
+            >
+              {locMode === 'map' ? '⌨️ ম্যানুয়াল' : '🗺️ ম্যাপ'}
+            </button>
+          </div>
+
+          {/* GPS error */}
+          {gpsError && (
+            <p className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2">
+              ⚠️ {gpsError}
+            </p>
+          )}
+
+          {/* Manual coordinate input */}
+          {locMode === 'manual' && (
+            <div className="space-y-2">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-1">অক্ষাংশ (Latitude)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    placeholder="23.8566"
+                    value={manualLat}
+                    onChange={e => setManualLat(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2
+                      text-xs text-white placeholder-gray-600
+                      focus:border-blue-500/60 focus:outline-none transition-colors"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-gray-500 block mb-1">দ্রাঘিমাংশ (Longitude)</label>
+                  <input
+                    type="number"
+                    step="0.000001"
+                    placeholder="90.2677"
+                    value={manualLng}
+                    onChange={e => setManualLng(e.target.value)}
+                    className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2
+                      text-xs text-white placeholder-gray-600
+                      focus:border-blue-500/60 focus:outline-none transition-colors"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualCoord}
+                className="w-full py-2 rounded-xl text-xs font-bold
+                  bg-green-600/20 border border-green-500/40 text-green-300
+                  hover:bg-green-600/30 transition-all active:scale-95"
+              >
+                ✅ এই কোঅর্ডিনেট সেট করুন
+              </button>
+            </div>
+          )}
+
+          {/* Confirmed location badge */}
+          {pickedLat && pickedLng && (
+            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20
+              rounded-xl px-3 py-2 text-xs text-green-300">
+              <span>📌</span>
+              <span className="font-mono">
+                {pickedLat.toFixed(5)}°N, {pickedLng.toFixed(5)}°E
+              </span>
+              <span className="ml-auto text-green-400 font-bold">✓ সেট</span>
+            </div>
+          )}
+
+          {/* Map picker — shown when in map mode and not tubewell */}
+          {locMode === 'map' && !isTubewell && (
+            <WaterSourcePicker
+              defaultLat={pickedLat ?? farmerLat}
+              defaultLng={pickedLng ?? farmerLng}
+              onPick={handlePick}
+              pickedLat={pickedLat}
+              pickedLng={pickedLng}
+            />
+          )}
         </div>
       )}
 

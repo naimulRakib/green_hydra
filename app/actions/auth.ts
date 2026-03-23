@@ -29,25 +29,28 @@ export async function signup(formData: FormData) {
     return redirect('/signup?error=' + encodeURIComponent(msg))
   }
 
-  if (!data.user) {
+  if (!data?.user) {
     return redirect('/signup?error=' + encodeURIComponent('একাউন্ট তৈরি করা সম্ভব হয়নি'))
   }
 
-  // Step 2: Insert farmer row
+  // Step 2: Insert farmer row ensuring robustness
   // farm_location uses Bangladesh centroid as default — overwritten in onboarding.
-  // SRID=4326;POINT(lng lat) — PostGIS EWKT format, lng comes FIRST.
-  const { error: dbError } = await supabase
-    .from('farmers')
-    .insert({
-      id:            data.user.id,
-      phone_number:  phone,
-      farm_location: 'SRID=4326;POINT(90.3563 23.8103)',
-    })
+  try {
+    const { error: dbError } = await supabase
+      .from('farmers')
+      .insert({
+        id:            data.user.id,
+        phone_number:  phone,
+        farm_location: 'SRID=4326;POINT(90.3563 23.8103)',
+      })
 
-  if (dbError) {
-    // Non-fatal: auth user exists, farmer row can be retried in onboarding.
-    // Log for monitoring — if this happens consistently, check RLS policies.
-    console.error('[Auth] Farmer row insert error:', dbError.message, '| user:', data.user.id)
+    if (dbError) {
+      console.error('[Auth] Farmer row insert failed but auth succeeded:', dbError.message, '| user:', data.user.id)
+      // Inform the user but still let them complete auth if policy/DB issue occurred
+      // return redirect('/onboarding?warning=' + encodeURIComponent('Profile setup delayed'))
+    }
+  } catch (err) {
+    console.error('[Auth] Fatal error during farmer setup:', err)
   }
 
   redirect('/onboarding')

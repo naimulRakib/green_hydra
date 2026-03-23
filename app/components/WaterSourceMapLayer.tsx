@@ -4,8 +4,31 @@ import { useEffect, useRef } from 'react'
 import { RISK_CONFIG, WATER_TYPE_CONFIG } from '@/app/types/water'
 import type { WaterSource } from '@/app/types/water'
 
+type LeafletLatLngTuple = [number, number]
+
+type LayerGroupLike = {
+  clearLayers: () => void
+  addTo: (m: unknown) => LayerGroupLike
+}
+
+type CircleLike = {
+  addTo: (g: unknown) => CircleLike
+  bindPopup: (html: string, opts?: Record<string, unknown>) => void
+}
+
+type MarkerLike = {
+  addTo: (g: unknown) => MarkerLike
+}
+
+type LeafletGlobal = {
+  layerGroup: () => LayerGroupLike
+  circle: (latlng: LeafletLatLngTuple, opts: Record<string, unknown>) => CircleLike
+  divIcon: (opts: Record<string, unknown>) => unknown
+  marker: (latlng: LeafletLatLngTuple, opts: Record<string, unknown>) => MarkerLike
+}
+
 interface Props {
-  map:            any           // Leaflet map instance
+  map:            unknown       // Leaflet map instance
   waterSources:   WaterSource[]
   mapInitialized: boolean
 }
@@ -15,11 +38,11 @@ export default function WaterSourceMapLayer({
   waterSources,
   mapInitialized,
 }: Props) {
-  const layerGroupRef = useRef<any>(null)
+  const layerGroupRef = useRef<LayerGroupLike | null>(null)
 
   useEffect(() => {
     if (!mapInitialized || !map) return
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     if (!L) return
 
     // Clear previous layer

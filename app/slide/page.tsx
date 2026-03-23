@@ -19,7 +19,7 @@ export default function AgriHydraPitchDeck() {
             </p>
           </div>
           <div className="text-center mt-8">
-            <p className="text-gray-500 italic">"শুধু ফসলের রোগ নির্ণয় নয়, পুরো ইকোসিস্টেম রক্ষার একটি সায়েন্টিফিক উদ্যোগ।"</p>
+            <p className="text-gray-500 italic">&quot;শুধু ফসলের রোগ নির্ণয় নয়, পুরো ইকোসিস্টেম রক্ষার একটি সায়েন্টিফিক উদ্যোগ।&quot;</p>
           </div>
         </div>
       )
@@ -34,7 +34,7 @@ export default function AgriHydraPitchDeck() {
             <strong>দেশের সামগ্রিক দূষণ:</strong> বাংলাদেশে পুরো দেশব্যাপী দূষণের <strong>৬০% অবদান</strong> যায় কৃষি জমিতে অতিরিক্ত কীটনাশক এবং রাসায়নিক সারের ব্যবহারের কারণে। এটি একই সাথে মাটি, পানি, বায়ু দূষণ এবং পুরো প্রাণিবৈচিত্র্যকে ধ্বংস করছে। 
           </p>
           <p>
-            <strong>মূল সংকট (Abiotic vs Biotic):</strong> সাভার ও কেরানীগঞ্জের মতো শিল্পাঞ্চলগুলোতে কারখানা থেকে নির্গত বিষাক্ত ধোঁয়া এবং রাসায়নিক বর্জ্যের কারণে ফসলে <strong>'Abiotic Stress'</strong> বা পরিবেশগত ক্ষতের সৃষ্টি হয়। কিন্তু সাধারণ AI স্ক্যানার বা আমাদের কৃষকরা এই রাসায়নিক ক্ষতকে ছত্রাক বা ফাঙ্গাল ব্লাস্টের মতো রোগ ভেবে ভুল করেন।
+            <strong>মূল সংকট (Abiotic vs Biotic):</strong> সাভার ও কেরানীগঞ্জের মতো শিল্পাঞ্চলগুলোতে কারখানা থেকে নির্গত বিষাক্ত ধোঁয়া এবং রাসায়নিক বর্জ্যের কারণে ফসলে <strong>&apos;Abiotic Stress&apos;</strong> বা পরিবেশগত ক্ষতের সৃষ্টি হয়। কিন্তু সাধারণ AI স্ক্যানার বা আমাদের কৃষকরা এই রাসায়নিক ক্ষতকে ছত্রাক বা ফাঙ্গাল ব্লাস্টের মতো রোগ ভেবে ভুল করেন।
           </p>
           <div className="bg-red-50 p-4 rounded-lg border border-red-100">
             <p className="font-semibold text-red-800">আমাদের অনন্য এপ্রোচ:</p>
@@ -53,7 +53,7 @@ export default function AgriHydraPitchDeck() {
           <ul className="list-disc pl-5 space-y-3">
             <li><strong>হোলিস্টিক বিশ্লেষণ:</strong> ছবি আপলোডের পর সিস্টেমটি জমির সঠিক GPS লোকেশন, আশেপাশের কারখানা, বাতাসের দিক, এবং কৃষকের সাপ্তাহিক সার্ভে ডেটা মিলিয়ে দেখে।</li>
             <li><strong>প্রতিবেশী ডেটা:</strong> প্রতিবেশীর জমিতে কীটনাশক স্প্রে বা রাসায়নিক সার অ্যাক্টিভ কিনা তা দেখা হয়।</li>
-            <li><strong>মাস্টার জজ AI (Veto Power):</strong> যদি দেখা যায় ফসলটি বিষাক্ত ধোঁয়ার (Toxic Plume) ভেতরে আছে, তখন আমাদের 'মাস্টার জাজ এআই' সাধারণ রোগ নির্ণয় বাতিল করে দেয় (Veto)। এটি নির্ভুলভাবে রাসায়নিক ক্ষত শনাক্ত করে এবং কৃষককে ক্ষতিকর স্প্রে করতে কড়াভাবে নিষেধ করে।</li>
+            <li><strong>মাস্টার জজ AI (Veto Power):</strong> যদি দেখা যায় ফসলটি বিষাক্ত ধোঁয়ার (Toxic Plume) ভেতরে আছে, তখন আমাদের &apos;মাস্টার জাজ এআই&apos; সাধারণ রোগ নির্ণয় বাতিল করে দেয় (Veto)। এটি নির্ভুলভাবে রাসায়নিক ক্ষত শনাক্ত করে এবং কৃষককে ক্ষতিকর স্প্রে করতে কড়াভাবে নিষেধ করে।</li>
           </ul>
           <p className="bg-blue-50 p-4 rounded-lg text-blue-800 font-medium">লক্ষ্য: ভুল ফসল চাষ এড়ানো, দূষণের প্রভাব আঙুল দিয়ে দেখানো, অযথা কীটনাশকের অর্থ অপচয় রোধ, এবং যেকোনো ভাইরাল রোগের অফলাইন Zone-wise মেসেজিং ব্রডকাস্ট করা।</p>
         </div>
@@ -65,11 +65,11 @@ export default function AgriHydraPitchDeck() {
       subtitle: "অত্যাধুনিক মাল্টি-মডেল আর্কিটেকচার",
       content: (
         <div className="space-y-4 text-gray-800 text-sm">
-          <p>আমাদের টেক-স্ট্যাক 'মাল্টি-মডেল এআই' (Multi-model AI) নির্ভর। </p>
+          <p>আমাদের টেক-স্ট্যাক &apos;মাল্টি-মডেল এআই&apos; (Multi-model AI) নির্ভর। </p>
           <ul className="list-disc pl-5 space-y-2">
-            <li><strong>মডেল ডিস্ট্রিবিউশন:</strong> গেটকিপিং এবং ভিশন টাস্কের জন্য <strong>Gemini 3.1 Flash</strong>, এবং 'মাস্টার জজ' ডিসিশন মেকিংয়ের জন্য OpenRouter-এর মাধ্যমে <strong>DeepSeek</strong> ব্যবহার করছি।</li>
+            <li><strong>মডেল ডিস্ট্রিবিউশন:</strong> গেটকিপিং এবং ভিশন টাস্কের জন্য <strong>Gemini 3.1 Flash</strong>, এবং &apos;মাস্টার জজ&apos; ডিসিশন মেকিংয়ের জন্য OpenRouter-এর মাধ্যমে <strong>DeepSeek</strong> ব্যবহার করছি।</li>
             <li><strong>অ্যান্টি-হ্যালুসিনেশন (Anti-Hallucination):</strong> AI-এর ভুল তথ্য দেওয়া বন্ধ করতে আমরা তৈরি করেছি একটি <strong>Man-made Researched Database</strong>। Semantic Vector Search এবং pgvector ব্যবহার করে Scan Log Cache থেকে পূর্বের রেজাল্ট মিলি-সেকেন্ডে বের করে আনি।</li>
-            <li><strong>এনভায়রনমেন্ট ও ওয়েদার গ্রিড:</strong> Weather API দিয়ে গত ৭ দিনের ডেটা ফেচ করে 'Climate-related crop sustainability' বিশ্লেষণ করা হয়।</li>
+            <li><strong>এনভায়রনমেন্ট ও ওয়েদার গ্রিড:</strong> Weather API দিয়ে গত ৭ দিনের ডেটা ফেচ করে &apos;Climate-related crop sustainability&apos; বিশ্লেষণ করা হয়।</li>
             <li><strong>স্প্যাশিয়াল ইন্টেলিজেন্স:</strong> ম্যাপে Spray Marking এবং Polluted Water Source Detection-এর মাধ্যমে ক্ষতির আসল কারণ (মাটি/পানি/বাতাস) নির্ণয়।</li>
             <li><strong>ভবিষ্যৎ পরিকল্পনা:</strong> প্রত্যন্ত অঞ্চলে ইন্টারনেট ছাড়াই সেবা দিতে <strong>CNN (Convolutional Neural Network)</strong> ইন্টিগ্রেশন।</li>
           </ul>
@@ -130,7 +130,7 @@ export default function AgriHydraPitchDeck() {
           <p><strong>মার্কেট:</strong> দ্রুত শিল্পায়নের কারণে বিশ্বজুড়ে লক্ষ লক্ষ কৃষক এই সংকটের সম্মুখীন, যা আমাদের জন্য একটি বিশাল মার্কেট। </p>
           <ul className="list-disc pl-5 space-y-2">
             <li><strong>Freemium & B2B2C:</strong> কৃষকদের জন্য বেসিক ডায়াগনস্টিক অ্যাপটি সম্পূর্ণ ফ্রি, যার সাবসিডি দেবে এনজিও বা কৃষি সম্প্রসারণ অধিদপ্তর।</li>
-            <li><strong>রেভিনিউ স্ট্রিম:</strong> আমাদের আয়ের মূল উৎস হবে <strong>'প্রিমিয়াম অ্যানালিটিক্স ড্যাশবোর্ড'</strong>। এটি সরকারি সংস্থা, নীতিনির্ধারক ও পরিবেশবাদী সংস্থাগুলোর কাছে সাবস্ক্রিপশন মডেলে বিক্রি হবে (রিয়েল-টাইমে শিল্প দূষণের ইমপ্যাক্ট হিটম্যাপ এবং মহামারী সতর্কতা)।</li>
+            <li><strong>রেভিনিউ স্ট্রিম:</strong> আমাদের আয়ের মূল উৎস হবে <strong>&apos;প্রিমিয়াম অ্যানালিটিক্স ড্যাশবোর্ড&apos;</strong>। এটি সরকারি সংস্থা, নীতিনির্ধারক ও পরিবেশবাদী সংস্থাগুলোর কাছে সাবস্ক্রিপশন মডেলে বিক্রি হবে (রিয়েল-টাইমে শিল্প দূষণের ইমপ্যাক্ট হিটম্যাপ এবং মহামারী সতর্কতা)।</li>
             <li className="text-orange-700 font-semibold"><strong>ফেয়ার প্রাইসিং ভিশন:</strong> কৃষিতথ্য দিয়ে সিস্টেমকে প্রসিদ্ধ করে, উৎপাদিত পণ্যের পরিমাণ ও ব্যয়ভার নিকাশ করে কৃষকের দ্রব্যমূল্যের ন্যায্যতা ফিরিয়ে আনার মাধ্যমে মধ্যস্থতাকারীর (Middlemen) পদস্খলন করার ইচ্ছে আমাদের রয়েছে।</li>
           </ul>
         </div>
@@ -202,7 +202,7 @@ export default function AgriHydraPitchDeck() {
       content: (
         <div className="flex flex-col items-center justify-center h-full text-center space-y-6">
           <h2 className="text-3xl sm:text-4xl font-extrabold text-green-700">
-            "Agri-Hydra শুধু ফসলের রোগ নির্ণয় করছে না; আমরা আমাদের পুরো ইকোসিস্টেমকে রক্ষা করছি।"
+            &quot;Agri-Hydra শুধু ফসলের রোগ নির্ণয় করছে না; আমরা আমাদের পুরো ইকোসিস্টেমকে রক্ষা করছি।&quot;
           </h2>
           <p className="text-xl font-medium text-gray-600 mt-4">
             ধন্যবাদ সবাইকে।

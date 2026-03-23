@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import dynamic from 'next/dynamic'
+import type { SatelliteWaterData } from '../actions/industrial'
 
 const LeafletMap = dynamic(() => import('./LeafletMapInner'), {
   ssr: false,
@@ -34,6 +35,7 @@ export interface Hotspot {
 
 interface Props {
   hotspots:     Hotspot[]
+  satelliteData?: SatelliteWaterData[]
   farmerLat:    number
   farmerLng:    number
   windFromDeg:  number
@@ -52,9 +54,7 @@ const INDUSTRY_EMOJI: Record<string, string> = {
   Brick_Kiln: '🧱', Garment_Factory: '👔', Tannery: '🏗️',
 }
 
-export default function ImpactMap({ hotspots, farmerLat, farmerLng, windFromDeg, windSpeedKmh }: Props) {
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+export default function ImpactMap({ hotspots, satelliteData = [], farmerLat, farmerLng, windFromDeg, windSpeedKmh }: Props) {
 
   // Guard: filter out any rows with missing coords before passing to Leaflet
   const validHotspots = useMemo(
@@ -100,15 +100,14 @@ export default function ImpactMap({ hotspots, farmerLat, farmerLng, windFromDeg,
       </div>
 
       {/* Map */}
-      {mounted && (
-        <LeafletMap
-          hotspots={validHotspots}
-          farmerLat={farmerLat}
-          farmerLng={farmerLng}
-          windFromDeg={windFromDeg}
-          windSpeedKmh={windSpeedKmh}
-        />
-      )}
+      <LeafletMap
+        hotspots={validHotspots}
+        satelliteData={satelliteData}
+        farmerLat={farmerLat}
+        farmerLng={farmerLng}
+        windFromDeg={windFromDeg}
+        windSpeedKmh={windSpeedKmh}
+      />
 
       {/* Legend */}
       <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-4 bg-gray-50 flex-wrap">
@@ -119,13 +118,23 @@ export default function ImpactMap({ hotspots, farmerLat, farmerLng, windFromDeg,
         </div>
         <div className="flex items-center gap-1.5 text-xs text-gray-500">
           <div className="w-3 h-3 rounded-sm bg-gray-400 opacity-40 border border-dashed border-gray-400" />
-          নিরাপদ
+          নিরাপদ বায়ু
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>🌾</span> আপনার খামার
+        <div className="flex items-center gap-1.5 text-xs text-blue-600">
+          <div className="w-3 h-3 rounded-[3px] bg-blue-500/30 border border-blue-500" />
+          পানির গুণমান (স্যাটেলাইট)
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>🏭</span> কারখানা
+        <div className="flex items-center gap-1.5 text-xs text-red-600">
+          <div className="w-3 h-3 rounded-[3px] bg-red-500/30 border border-red-500" />
+          সন্দেহজনক দূষণ
+        </div>
+        <div className="flex w-full items-center gap-4 mt-1 border-t border-gray-200/50 pt-2 pb-1">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span>🌾</span> আপনার খামার
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span>🏭</span> কারখানা
+          </div>
         </div>
       </div>
 

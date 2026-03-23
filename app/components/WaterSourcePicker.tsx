@@ -2,6 +2,24 @@
 
 import { useEffect, useRef, useState } from 'react'
 
+type LeafletMapLike = {
+  remove: () => void
+  setView: (center: [number, number], zoom: number) => void
+  on: (event: 'click', handler: (e: { latlng: { lat: number; lng: number } }) => void) => void
+}
+
+type LeafletMarkerLike = {
+  addTo: (map: LeafletMapLike) => LeafletMarkerLike
+  setLatLng: (latlng: [number, number]) => void
+}
+
+type LeafletGlobal = {
+  map: (el: HTMLElement, opts: Record<string, unknown>) => LeafletMapLike
+  tileLayer: (url: string, opts: Record<string, unknown>) => { addTo: (map: LeafletMapLike) => void }
+  marker: (latlng: [number, number], opts: Record<string, unknown>) => LeafletMarkerLike
+  divIcon: (opts: Record<string, unknown>) => unknown
+}
+
 interface Props {
   defaultLat:  number
   defaultLng:  number
@@ -18,15 +36,15 @@ export default function WaterSourcePicker({
   pickedLng,
 }: Props) {
   const mapRef      = useRef<HTMLDivElement>(null)
-  const leafletMap  = useRef<any>(null)
-  const markerRef   = useRef<any>(null)
+  const leafletMap  = useRef<LeafletMapLike | null>(null)
+  const markerRef   = useRef<LeafletMarkerLike | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
     if (!mapRef.current || leafletMap.current) return
 
     // Dynamically load Leaflet (already loaded in project)
-    const L = (window as any).L
+    const L = (window as unknown as { L?: LeafletGlobal }).L
     if (!L) {
       // Fallback: load from CDN
       const link = document.createElement('link')
@@ -43,10 +61,10 @@ export default function WaterSourcePicker({
     }
 
     function initMap() {
-      const L = (window as any).L
-      if (!mapRef.current) return
+      const L = (window as unknown as { L?: LeafletGlobal }).L
+      if (!L || !mapRef.current) return
 
-      const map = L.map(mapRef.current, {
+      const map = L.map(mapRef.current as HTMLElement, {
         center:          [defaultLat, defaultLng],
         zoom:            15,
         zoomControl:     true,
@@ -81,7 +99,7 @@ export default function WaterSourcePicker({
       }
 
       // Click to place/move marker
-      map.on('click', (e: any) => {
+      map.on('click', (e: { latlng: { lat: number; lng: number } }) => {
         const { lat, lng } = e.latlng
 
         if (markerRef.current) {

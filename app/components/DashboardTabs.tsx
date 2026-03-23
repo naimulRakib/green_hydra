@@ -2,16 +2,17 @@
 /**
  * DashboardTabs — client component for tab navigation.
  * Updates URL search param ?tab= so the server re-renders with correct tab.
- * No full page reload — Next.js App Router handles it as a soft navigation.
  */
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
-
 const TABS = [
   { id: "overview", label: "🏠 ওভারভিউ" },
   { id: "land",     label: "🗺️ জমি নিবন্ধন" },
-  { id: "survey",   label: "📋 সাপ্তাহিক সার্ভে" },
+  { id: "survey",   label: "📋 সার্ভে" },
+  { id: "pollution", label: "🏭 দূষণ রিপোর্ট" },
+  { id: "risk",     label: "🎯 রিস্ক ও ক্ষতি" },
+  { id: "scan",     label: "🔍 স্ক্যানার" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];

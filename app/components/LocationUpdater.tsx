@@ -65,8 +65,9 @@ export default function LocationUpdater({ currentLat, currentLng, currentZone }:
     try {
       await updateLocationManual(numLat, numLng, zone.id)
       setResult({ ok: true, msg: `${zone.name} জোনে আপডেট হয়েছে।` })
-    } catch (err: any) {
-      setResult({ ok: false, msg: err.message ?? 'আপডেট করতে সমস্যা হয়েছে।' })
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : undefined
+      setResult({ ok: false, msg: msg ?? 'আপডেট করতে সমস্যা হয়েছে।' })
     } finally {
       setLoading(false)
     }

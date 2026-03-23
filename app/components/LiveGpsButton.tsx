@@ -31,8 +31,9 @@ export default function LiveGpsButton() {
           setMessage(`${result.zoneName}-এ আপডেট হয়েছে`)
           setState('success')
           setTimeout(() => setState('idle'), 3000)
-        } catch (err: any) {
-          setMessage(err.message ?? 'সার্ভারে সমস্যা হয়েছে')
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : undefined
+          setMessage(msg ?? 'সার্ভারে সমস্যা হয়েছে')
           setState('error')
           setTimeout(() => setState('idle'), 4000)
         }

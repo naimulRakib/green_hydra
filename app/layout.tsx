@@ -3,12 +3,19 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import Link from 'next/link'
 import { createClient } from './utils/supabase/server'
+import ServiceWorkerRegister from './components/ServiceWorkerRegister'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'AgroSentinel | GreenHydra',
   description: 'AI-driven ecosystem analyzer for farmers in Bangladesh',
+  manifest: '/manifest.webmanifest',
+  themeColor: '#16a34a',
+  icons: {
+    icon: '/icons/icon-192.svg',
+    apple: '/icons/icon-192.svg',
+  },
 }
 
 export default async function RootLayout({
@@ -23,6 +30,7 @@ export default async function RootLayout({
   return (
     <html lang="bn">
       <body className={`${inter.className} bg-gray-50 text-gray-900 antialiased flex flex-col min-h-screen`}>
+        <ServiceWorkerRegister />
         
         {/* --- Top Navigation Bar --- */}
         <header className="bg-white shadow-sm border-b border-green-100 sticky top-0 z-50">

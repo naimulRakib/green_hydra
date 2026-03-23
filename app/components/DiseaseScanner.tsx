@@ -1,10 +1,46 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 
 interface Props {
   farmerId: string;
-  plots: any[];
+  plots: LandPlot[];
+}
+
+interface LandPlot {
+  land_id: string;
+  land_name_bn?: string | null;
+  land_name?: string | null;
+  crop_id?: string | null;
+  area_bigha?: number | null;
+  last_survey_days?: number | null;
+}
+
+interface DiagnosisResult {
+  final_diagnosis: string;
+  disease_type: "Biotic" | "Abiotic";
+  spray_suppressed?: boolean;
+  confidence?: number;
+  reasoning_bn: string;
+  remedy_bn: string;
+}
+
+interface DiagnosisContext {
+  is_in_plume?: boolean;
+  neighbor_sprays?: number;
+  rag_cases_used?: number;
+  weather?: string;
+}
+
+interface DiagnoseResponse {
+  success: boolean;
+  blocked?: boolean;
+  message?: string;
+  diagnosis?: DiagnosisResult;
+  source?: string;
+  context?: DiagnosisContext | null;
+  image_url?: string | null;
 }
 
 export default function DiseaseScanner({ farmerId, plots }: Props) {
@@ -12,18 +48,35 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
   const [image, setImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<DiagnosisResult | null>(null);
   const [resultSource, setResultSource] = useState<string>("");
-  const [resultContext, setResultContext] = useState<any>(null);
+  const [resultContext, setResultContext] = useState<DiagnosisContext | null>(null);
   const [savedImageUrl, setSavedImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
 
+  const previewUrlRef = useRef<string | null>(null);
+
+  // Cleanup blob URL on unmount to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+      }
+    };
+  }, []);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      // Revoke the old blob URL before creating a new one
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+      }
+      const url = URL.createObjectURL(file);
+      previewUrlRef.current = url;
       setImage(file);
-      setPreviewUrl(URL.createObjectURL(file));
+      setPreviewUrl(url);
       setResult(null);
       setError(null);
       setBlocked(false);
@@ -64,22 +117,22 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
               }),
             });
 
-            const data = await response.json();
+             const data: DiagnoseResponse = await response.json();
 
-            if (!data.success) {
-              if (data.blocked) {
-                setBlocked(true);
-                setError(data.message);
+             if (!data.success) {
+               if (data.blocked) {
+                 setBlocked(true);
+                setError(data.message ?? null);
               } else {
                 setError(data.message || "স্ক্যান করতে সমস্যা হয়েছে।");
               }
             } else {
-              setResult(data.diagnosis);
+              setResult(data.diagnosis ?? null);
               setResultSource(data.source ?? "");
               setResultContext(data.context ?? null);
               setSavedImageUrl(data.image_url ?? null);
             }
-          } catch (innerErr) {
+          } catch {
             setError("সার্ভারের সাথে কানেক্ট করা যাচ্ছে না।");
           } finally {
             setLoading(false);
@@ -90,10 +143,10 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
           setLoading(false);
         }
       );
-    } catch (err) {
-      setError("সার্ভারের সাথে কানেক্ট করা যাচ্ছে না।");
-      setLoading(false);
-    }
+     } catch {
+       setError("সার্ভারের সাথে কানেক্ট করা যাচ্ছে না।");
+       setLoading(false);
+     }
   };
 
   const selectedPlot = plots.find(p => p.land_id === selectedLandId);
@@ -219,12 +272,12 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
               {resultContext.is_in_plume && (
                 <span className="px-2 py-1 bg-red-100 text-red-700 rounded-full">🏭 প্লাম সক্রিয়</span>
               )}
-              {resultContext.neighbor_sprays > 0 && (
+              {(resultContext.neighbor_sprays ?? 0) > 0 && (
                 <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded-full">
                   🏘️ {resultContext.neighbor_sprays}টি প্রতিবেশী স্প্রে
                 </span>
               )}
-              {resultContext.rag_cases_used > 0 && (
+              {(resultContext.rag_cases_used ?? 0) > 0 && (
                 <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded-full">
                   🔍 {resultContext.rag_cases_used}টি স্থানীয় কেস মিলেছে
                 </span>

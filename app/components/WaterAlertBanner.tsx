@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { markWaterAlertRead } from '@/app/actions/waterActions'
-import { RISK_CONFIG, WATER_TYPE_CONFIG } from '@/app/types/water'
+import { WATER_TYPE_CONFIG } from '@/app/types/water'
 import type { WaterAlert } from '@/app/types/water'
 
 interface Props {
@@ -51,6 +51,22 @@ export default function WaterAlertBanner({ alerts, farmerId }: Props) {
         const isExpanded  = expanded === alert.event_id
         const typeInfo    = WATER_TYPE_CONFIG[alert.source_type]
         const distanceKm  = (alert.distance_m / 1000).toFixed(1)
+        const complaintData = encodeURIComponent(JSON.stringify({
+          farmerId,
+          alert: {
+            event_id: alert.event_id,
+            source_name_bn: alert.source_name_bn,
+            source_type: alert.source_type,
+            severity: alert.severity,
+            distance_m: alert.distance_m,
+            alert_message_bn: alert.alert_message_bn,
+            factory_name_bn: alert.factory_name_bn,
+            water_color: alert.water_color,
+            fish_kill: alert.fish_kill,
+            farmer_count: alert.farmer_count,
+            reported_at: alert.reported_at,
+          },
+        }))
 
         return (
           <div
@@ -187,10 +203,10 @@ export default function WaterAlertBanner({ alerts, farmerId }: Props) {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex gap-2 pt-1">
+                  <div className="flex gap-2 pt-1 flex-wrap">
                     <a
                       href="tel:16100"
-                      className="flex-1 text-center py-2 text-xs font-bold
+                      className="flex-1 min-w-[120px] text-center py-2 text-xs font-bold
                                  bg-red-600 text-white rounded-xl
                                  hover:bg-red-500 transition active:scale-95"
                     >
@@ -202,11 +218,21 @@ export default function WaterAlertBanner({ alerts, farmerId }: Props) {
                       )}`}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex-1 text-center py-2 text-xs font-bold
+                      className="flex-1 min-w-[120px] text-center py-2 text-xs font-bold
                                  bg-green-700 text-white rounded-xl
                                  hover:bg-green-600 transition active:scale-95"
                     >
                       📲 শেয়ার করুন
+                    </a>
+                    <a
+                      href={`/doe-complaint?data=${complaintData}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 min-w-[120px] text-center py-2 text-xs font-bold
+                                 bg-slate-800 text-white rounded-xl
+                                 hover:bg-slate-700 transition active:scale-95"
+                    >
+                      🧾 অভিযোগ পিডিএফ
                     </a>
                   </div>
                 </div>

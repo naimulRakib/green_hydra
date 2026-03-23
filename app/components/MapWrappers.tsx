@@ -7,6 +7,7 @@
 
 import dynamic from 'next/dynamic'
 import type { Hotspot } from './ImpactMap'
+import type { SatelliteWaterData } from '../actions/industrial'
 
 const ImpactMapDynamic = dynamic(() => import('./ImpactMap'), {
   ssr: false,
@@ -23,6 +24,7 @@ const ImpactMapDynamic = dynamic(() => import('./ImpactMap'), {
 
 interface ImpactProps {
   hotspots:     Hotspot[]
+  satelliteData?: SatelliteWaterData[]
   farmerLat:    number
   farmerLng:    number
   windFromDeg:  number

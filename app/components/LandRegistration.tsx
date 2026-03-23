@@ -152,7 +152,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   const [error, setError]           = useState<string | null>(null);
   const [success, setSuccess]       = useState<string | null>(null);
   const [mapReady, setMapReady]     = useState(false);
-  const [locResolved, setLocResolved] = useState(false);
+  const [, setLocResolved] = useState(false);
 
   // ── Farmer current position (GPS or manual) ──────────────────────
   const [farmerLat, setFarmerLat] = useState<string>("");
@@ -171,16 +171,55 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   });
   const [selectedPlot, setSelectedPlot] = useState<LandPlot | null>(null);
 
+  type LeafletMapLike = {
+    remove: () => void;
+    removeLayer: (layer: unknown) => void;
+    flyTo: (...args: unknown[]) => void;
+    getContainer: () => HTMLElement;
+  };
+
+  type LeafletGlobal = {
+    Icon: {
+      Default: {
+        prototype: Record<string, unknown>;
+        mergeOptions: (opts: Record<string, unknown>) => void;
+      };
+    };
+    map: (...args: unknown[]) => LeafletMapLike & { on: (ev: string, handler: (e: unknown) => void) => void };
+    tileLayer: (...args: unknown[]) => { addTo: (map: unknown) => void };
+    circleMarker: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
+    polyline: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
+    polygon: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
+    geoJSON: (...args: unknown[]) => {
+      addTo: (map: unknown) => unknown;
+      bindTooltip: (...args: unknown[]) => unknown;
+      bindPopup: (...args: unknown[]) => unknown;
+      on: (ev: string, handler: () => void) => void;
+    };
+    divIcon: (...args: unknown[]) => unknown;
+    marker: (...args: unknown[]) => {
+      bindTooltip: (...args: unknown[]) => unknown;
+      addTo: (map: unknown) => unknown;
+    };
+    circle: (...args: unknown[]) => { addTo: (map: unknown) => unknown };
+  };
+
+  function getLeaflet(): LeafletGlobal | null {
+    const w = window as unknown as { L?: LeafletGlobal };
+    return w.L ?? null;
+  }
+
+
   // ── Leaflet refs ──────────────────────────────────────────────────
   const mapDivRef       = useRef<HTMLDivElement>(null);
-  const mapRef          = useRef<any>(null);
-  const polylineRef     = useRef<any>(null);
-  const polygonRef      = useRef<any>(null);
-  const markersRef      = useRef<any[]>([]);
-  const layersRef       = useRef<any[]>([]);
-  const sprayLayersRef  = useRef<any[]>([]);
-  const myLocMarkerRef  = useRef<any>(null);
-  const myLocCircleRef  = useRef<any>(null);
+  const mapRef          = useRef<LeafletMapLike | null>(null);
+  const polylineRef     = useRef<unknown>(null);
+  const polygonRef      = useRef<unknown>(null);
+  const markersRef      = useRef<unknown[]>([]);
+  const layersRef       = useRef<unknown[]>([]);
+  const sprayLayersRef  = useRef<unknown[]>([]);
+  const myLocMarkerRef  = useRef<unknown>(null);
+  const myLocCircleRef  = useRef<unknown>(null);
   const drawRef         = useRef<DrawState>({ active: false, coords: [], areaM2: 0 });
 
   useEffect(() => { drawRef.current = draw; }, [draw]);
@@ -188,7 +227,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   // ── Load Leaflet once ─────────────────────────────────────────────
   useEffect(() => {
     if (leafletBootstrapped) {
-      if ((window as any).L) setMapReady(true);
+      if (getLeaflet()) setMapReady(true);
       return;
     }
     leafletBootstrapped = true;
@@ -207,15 +246,16 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   // ── Init / re-init map ───────────────────────────────────────────
   useEffect(() => {
     if (!mapReady || !mapDivRef.current) return;
-    const L = (window as any).L;
+    const L = getLeaflet();
+    if (!L) return;
 
     if (mapRef.current) {
-      try { mapRef.current.remove(); } catch (_) {}
+      try { mapRef.current.remove(); } catch {}
       mapRef.current = null;
     }
 
     // Fix Next.js icon path crash
-    delete (L.Icon.Default.prototype as any)._getIconUrl;
+    delete (L.Icon.Default.prototype as Record<string, unknown>)._getIconUrl;
     L.Icon.Default.mergeOptions({
       iconUrl:       "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
       iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -228,10 +268,13 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     }).addTo(map);
 
     // Click handler reads from drawRef — never stale
-    map.on("click", (e: any) => {
+    map.on("click", (e: unknown) => {
       if (!drawRef.current.active) return;
-      const L2 = (window as any).L;
-      const { lat, lng } = e.latlng;
+      const L2 = getLeaflet();
+      if (!L2) return;
+      const latlng = (e as { latlng?: { lat: number; lng: number } })?.latlng;
+      if (!latlng) return;
+      const { lat, lng } = latlng;
       const newCoords: [number, number][] = [...drawRef.current.coords, [lat, lng]];
 
       const marker = L2.circleMarker([lat, lng], {
@@ -255,7 +298,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     mapRef.current = map;
 
     return () => {
-      try { map.remove(); } catch (_) {}
+      try { map.remove(); } catch {}
       mapRef.current = null;
       polylineRef.current = null;
       polygonRef.current  = null;
@@ -269,9 +312,10 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
 
   // ── Render own plot layers ───────────────────────────────────────
   useEffect(() => {
-    const L = (window as any).L;
-    if (!L || !mapRef.current) return;
-    layersRef.current.forEach(l => { try { mapRef.current.removeLayer(l); } catch (_) {} });
+    const L = getLeaflet();
+    const map = mapRef.current;
+    if (!L || !map) return;
+    layersRef.current.forEach(l => { try { map.removeLayer(l); } catch {} });
     layersRef.current = [];
 
     plots.forEach(plot => {
@@ -292,15 +336,16 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
           .addTo(mapRef.current);
         layer.on("click", () => setSelectedPlot(plot));
         layersRef.current.push(layer);
-      } catch (_) {}
+      } catch {}
     });
   }, [plots, mapReady]);
 
   // ── Render community spray layers (2km) ─────────────────────────
   useEffect(() => {
-    const L = (window as any).L;
-    if (!L || !mapRef.current) return;
-    sprayLayersRef.current.forEach(l => { try { mapRef.current.removeLayer(l); } catch (_) {} });
+    const L = getLeaflet();
+    const map = mapRef.current;
+    if (!L || !map) return;
+    sprayLayersRef.current.forEach(l => { try { map.removeLayer(l); } catch {} });
     sprayLayersRef.current = [];
 
     communitySpray.forEach(sp => {
@@ -330,7 +375,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
           }).addTo(mapRef.current);
           sprayLayersRef.current.push(bufLayer);
         }
-      } catch (_) {}
+      } catch {}
     });
   }, [communitySpray, mapReady]);
 
@@ -341,8 +386,9 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       const { data, error: rpcErr } = await supabase.rpc("get_farmer_lands", { p_farmer_id: farmerId });
       if (rpcErr) throw rpcErr;
       setPlots(data ?? []);
-    } catch (e: any) {
-      setError("জমির তথ্য লোড হয়নি: " + (e.message ?? e));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError("জমির তথ্য লোড হয়নি: " + msg);
     } finally { setLoading(false); }
   }, [farmerId]);
 
@@ -355,7 +401,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
         p_lat: lat, p_lng: lng, p_radius_km: 2.0,
       });
       setCommunitySpray(data ?? []);
-    } catch (_) { /* non-critical */ }
+    } catch { /* non-critical */ }
   }, []);
 
   // ── Resolve nearest zone_id from kb_zones ────────────────────────
@@ -366,7 +412,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     try {
       const { data } = await supabase.rpc("resolve_zone_from_point", { p_lat: lat, p_lng: lng });
       if (data) { setLandForm(f => ({ ...f, zone_id: data })); return; }
-    } catch (_) {}
+    } catch {}
 
     // Fallback — fetch all zones, compute Euclidean distance client-side
     // Uses center_lat / center_lng FLOAT columns (no PostGIS needed)
@@ -384,19 +430,21 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
         if (d < minDist) { minDist = d; nearest = z.zone_id; }
       }
       setLandForm(f => ({ ...f, zone_id: nearest }));
-    } catch (_) { /* zone_id stays blank — dev can fill manually */ }
+    } catch { /* zone_id stays blank — dev can fill manually */ }
   }, []);
 
   // ── Wait for mapRef to be non-null (map tab must be active first) ─
   // The map useEffect only runs when tab==="map" AND mapDivRef is mounted.
   // GPS / manual confirm can fire from any tab, so we switch tab first,
   // then poll until the Leaflet instance is ready (max 3 seconds).
-  const waitForMap = useCallback((): Promise<any> => {
+  const waitForMap = useCallback((): Promise<LeafletMapLike> => {
     return new Promise((resolve, reject) => {
-      if (mapRef.current) { resolve(mapRef.current); return; }
+      const cur = mapRef.current;
+      if (cur) { resolve(cur); return; }
       let attempts = 0;
       const id = setInterval(() => {
-        if (mapRef.current) { clearInterval(id); resolve(mapRef.current); return; }
+        const m = mapRef.current;
+        if (m) { clearInterval(id); resolve(m); return; }
         if (++attempts > 30) { clearInterval(id); reject(new Error("map not ready")); }
       }, 100);
     });
@@ -404,7 +452,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
 
   // ── Core: go to location (shared by GPS + manual) ───────────────
   const goToLocation = useCallback(async (lat: number, lng: number) => {
-    const L = (window as any).L;
+    const L = getLeaflet();
     if (!L) return;
 
     // Switch to map tab first — this mounts the map div so the
@@ -412,10 +460,10 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     setTab("map");
 
     // Now wait until mapRef.current is populated
-    let map: any;
+    let map: LeafletMapLike;
     try {
       map = await waitForMap();
-    } catch (_) {
+    } catch {
       return; // timed out — give up silently
     }
 
@@ -437,7 +485,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     }
 
     // 3. Pulsing "my location" marker
-    if (myLocMarkerRef.current) { try { map.removeLayer(myLocMarkerRef.current); } catch (_) {} }
+    if (myLocMarkerRef.current) { try { map.removeLayer(myLocMarkerRef.current); } catch {} }
     const icon = L.divIcon({
       className: "",
       html: `<div style="width:18px;height:18px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 0 0 rgba(59,130,246,.7);animation:agroPulse 1.8s infinite"></div>`,
@@ -451,7 +499,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       .addTo(map);
 
     // 4. 2km radius circle
-    if (myLocCircleRef.current) { try { map.removeLayer(myLocCircleRef.current); } catch (_) {} }
+    if (myLocCircleRef.current) { try { map.removeLayer(myLocCircleRef.current); } catch {} }
     myLocCircleRef.current = L.circle([lat, lng], {
       radius: 2000, color: "#3b82f6",
       fillColor: "#3b82f6", fillOpacity: 0.04,
@@ -480,7 +528,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
         await goToLocation(lat, lng);
         setGpsLoading(false);
       },
-      err => { setError("GPS ব্যর্থ: " + err.message); setGpsLoading(false); },
+      (err: GeolocationPositionError) => { setError("GPS ব্যর্থ: " + err.message); setGpsLoading(false); },
       { enableHighAccuracy: true, timeout: 10000 }
     );
   }
@@ -506,25 +554,25 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   }
 
   function clearDraw() {
-    markersRef.current.forEach(m => { try { mapRef.current?.removeLayer(m); } catch (_) {} });
+    markersRef.current.forEach(m => { try { mapRef.current?.removeLayer(m); } catch {} });
     markersRef.current = [];
-    if (polylineRef.current) { try { mapRef.current?.removeLayer(polylineRef.current); } catch (_) {} polylineRef.current = null; }
-    if (polygonRef.current)  { try { mapRef.current?.removeLayer(polygonRef.current);  } catch (_) {} polygonRef.current  = null; }
+    if (polylineRef.current) { try { mapRef.current?.removeLayer(polylineRef.current); } catch {} polylineRef.current = null; }
+    if (polygonRef.current)  { try { mapRef.current?.removeLayer(polygonRef.current);  } catch {} polygonRef.current  = null; }
     const next: DrawState = { active: false, coords: [], areaM2: 0 };
     drawRef.current = next; setDraw(next);
     if (mapRef.current) mapRef.current.getContainer().style.cursor = "";
   }
 
   function undoPoint() {
-    const L = (window as any).L;
+    const L = getLeaflet();
     if (!L || drawRef.current.coords.length === 0) return;
     const last = markersRef.current.pop();
-    if (last) { try { mapRef.current?.removeLayer(last); } catch (_) {} }
+    if (last) { try { mapRef.current?.removeLayer(last); } catch {} }
     const newCoords = drawRef.current.coords.slice(0, -1);
-    if (polylineRef.current) { try { mapRef.current?.removeLayer(polylineRef.current); } catch (_) {} polylineRef.current = null; }
-    if (polygonRef.current)  { try { mapRef.current?.removeLayer(polygonRef.current);  } catch (_) {} polygonRef.current  = null; }
-    if (newCoords.length > 1)  polylineRef.current = L.polyline(newCoords,  { color: "#f59e0b", weight: 2, dashArray: "6 4" }).addTo(mapRef.current);
-    if (newCoords.length >= 3) polygonRef.current  = L.polygon(newCoords,   { color: "#f59e0b", fillColor: "#fbbf24", fillOpacity: 0.2, weight: 2, dashArray: "6 4" }).addTo(mapRef.current);
+    if (polylineRef.current) { try { mapRef.current?.removeLayer(polylineRef.current); } catch {} polylineRef.current = null; }
+    if (polygonRef.current)  { try { mapRef.current?.removeLayer(polygonRef.current);  } catch {} polygonRef.current  = null; }
+    if (newCoords.length > 1)  polylineRef.current = L.polyline(newCoords,  { color: "#f59e0b", weight: 2, dashArray: "6 4" }).addTo(mapRef.current ?? undefined);
+    if (newCoords.length >= 3) polygonRef.current  = L.polygon(newCoords,   { color: "#f59e0b", fillColor: "#fbbf24", fillOpacity: 0.2, weight: 2, dashArray: "6 4" }).addTo(mapRef.current ?? undefined);
     const next: DrawState = { active: true, coords: newCoords, areaM2: calcAreaM2(newCoords) };
     drawRef.current = next; setDraw(next);
   }
@@ -555,8 +603,9 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       clearDraw();
       await fetchPlots();
       setTimeout(() => setSuccess(null), 5000);
-    } catch (e: any) {
-      setError("সংরক্ষণ ব্যর্থ: " + (e.message ?? JSON.stringify(e)));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError("সংরক্ষণ ব্যর্থ: " + msg);
     } finally { setSaving(false); }
   }
 
@@ -585,8 +634,9 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       await fetchPlots();
       setTab("digest");
       setTimeout(() => setSuccess(null), 5000);
-    } catch (e: any) {
-      setError("স্প্রে সংরক্ষণ ব্যর্থ: " + (e.message ?? JSON.stringify(e)));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setError("স্প্রে সংরক্ষণ ব্যর্থ: " + msg);
     } finally { setSavingSpray(false); }
   }
 
@@ -671,7 +721,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
             )}
 
             <div style={S.legend}>
-              {(Object.entries(RISK) as any[]).map(([k, v]) => (
+              {(Object.entries(RISK) as Array<[keyof typeof RISK, (typeof RISK)[keyof typeof RISK]]>).map(([k, v]) => (
                 <div key={k} style={S.legendItem}>
                   <div style={{ width: 10, height: 10, borderRadius: 2, background: v.fill }} />
                   <span>{v.label}</span>
@@ -786,7 +836,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
               <div key={key} style={S.field}>
                 <label style={S.label}>{label}</label>
                 <input style={S.input} placeholder={ph}
-                  value={(landForm as any)[key]}
+                  value={landForm[key as keyof LandForm]}
                   onChange={e => setLandForm(f => ({ ...f, [key]: e.target.value }))} />
               </div>
             ))}
@@ -962,7 +1012,7 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
             <div key={key} style={S.field}>
               <label style={S.label}>{label}</label>
               <input style={S.input} placeholder={ph}
-                value={(sprayForm as any)[key]}
+                value={sprayForm[key as keyof Pick<SprayForm, 'chemical_name' | 'chemical_name_bn' | 'chemical_type' | 'active_ingredient' | 'dose_per_bigha' | 'notes_bn'>] as string}
                 onChange={e => setSprayForm(f => ({ ...f, [key]: e.target.value }))} />
             </div>
           ))}
@@ -1068,7 +1118,7 @@ const S: Record<string, React.CSSProperties> = {
   locSubtitle:  { fontSize: 10, color: "#7d8590", lineHeight: 1.55 },
   btnGPS:       { background: "#1d4ed8", border: "none", borderRadius: 7, color: "#fff", padding: "9px 0", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "'Noto Sans Bengali', sans-serif", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 },
   btnConfirm:   { background: "#1f2937", border: "1px solid #3b82f6", borderRadius: 7, color: "#93c5fd", padding: "7px 0", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "'Noto Sans Bengali', sans-serif" },
-  zoneBadge:    { background: "#0d1117", border: "1px solid #3fb950", borderRadius: 6, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11 },
+  zoneBadge:    { background: "#0d1117", borderWidth: 1, borderStyle: "solid", borderColor: "#3fb950", borderRadius: 6, padding: "6px 10px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11 },
   zoneChip:     { fontFamily: "monospace", fontWeight: 700, color: "#e6edf3", background: "#21262d", padding: "2px 8px", borderRadius: 4, fontSize: 12 },
   sprayAlert:   { background: "#1c1410", border: "1px solid #92400e", borderRadius: 6, padding: "7px 10px", fontSize: 12, color: "#fbbf24" },
   spinInline:   { width: 12, height: 12, border: "2px solid rgba(255,255,255,.3)", borderTop: "2px solid #fff", borderRadius: "50%", display: "inline-block", animation: "spin .8s linear infinite" },

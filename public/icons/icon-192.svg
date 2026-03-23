@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="AgroSentinel">
+  <rect width="192" height="192" rx="32" fill="#16a34a"/>
+  <circle cx="96" cy="96" r="62" fill="#ffffff"/>
+  <path d="M96 46c14 18 20 34 20 48 0 18-9 34-20 42-11-8-20-24-20-42 0-14 6-30 20-48z" fill="#16a34a"/>
+  <path d="M64 122c18 6 40 6 64 0" stroke="#16a34a" stroke-width="10" stroke-linecap="round"/>
+</svg>
