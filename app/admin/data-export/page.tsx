@@ -63,7 +63,7 @@ type CertificationStatus = 'certifiable' | 'conditional' | 'not_eligible'
 
 interface ExportPreview {
   certScore: number
-  certStatus: CertificationStatus
+  certStatus: CertificationStatus | undefined
   riskOk: boolean
   noScans: boolean
   noHm: boolean
@@ -81,7 +81,7 @@ interface NgoPreview {
   avg_risk: number
 }
 
-type PreviewState = InsurancePreview | GovernmentPreview | ExportPreview | NgoPreview
+type PreviewState = InsurancePreview | GovernmentPreview | ExportPreview | NgoPreview | null
 
 type FarmerRow = Omit<FarmerListItem, 'total_lands' | 'latest_risk_level'>
 interface FarmerLandRow {
@@ -335,9 +335,9 @@ export default function DataExportAdminPage() {
 
         const checklist = [riskOk, noScans, noHm, waterColorOk, noFish, noArsenic, distOk, satClean]
         const certScore = checklist.filter(Boolean).length
-        const certStatus = certScore === 8 ? 'certifiable' : (certScore >= 5 ? 'conditional' : 'not_eligible')
+        const certStatus: CertificationStatus = certScore === 8 ? 'certifiable' : (certScore >= 5 ? 'conditional' : 'not_eligible')
 
-        setPreviewUI({ certScore, certStatus, riskOk, noScans, noHm, waterColorOk, noFish, noArsenic, satClean } as ExportPreview)
+        setPreviewUI({ certScore, certStatus, riskOk, noScans, noHm, waterColorOk, noFish, noArsenic, satClean })
 
         setBuyerData({
           export_type: "clean_zone_certification",
@@ -772,15 +772,15 @@ export default function DataExportAdminPage() {
                     <div className="flex justify-between items-center border-b pb-3 mb-4">
                       <h2 className="text-lg font-bold text-gray-800 tracking-wide">EXPORT CERTIFICATION</h2>
                        <div className={`px-4 py-1.5 rounded font-black uppercase tracking-wider text-sm border
-                         ${exportPreview.certStatus === 'certifiable' ? 'bg-green-100 text-green-800 border-green-300' : 
-                           exportPreview.certStatus === 'conditional' ? 'bg-amber-100 text-amber-800 border-amber-300' : 
+                       ${(exportPreview.certStatus ?? 'not_eligible') === 'certifiable' ? 'bg-green-100 text-green-800 border-green-300' : 
+                           (exportPreview.certStatus ?? 'not_eligible') === 'conditional' ? 'bg-amber-100 text-amber-800 border-amber-300' : 
                            'bg-red-100 text-red-800 border-red-300'}
                        `}>
-                         {exportPreview.certStatus.replace('_', ' ')}
+                         {(exportPreview.certStatus ?? 'not_eligible').replace('_', ' ')}
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-500 mb-4">Score: <b>{exportPreview.certScore}/8</b> criteria met for clean zone certification.</p>
+                    <p className="text-sm text-gray-500 mb-4">Score: <b>{exportPreview?.certScore ?? 0}/8</b> criteria met for clean zone certification.</p>
 
                     <div className="grid grid-cols-2 gap-3 text-sm">
                        <div className={`p-3 rounded border flex items-center justify-between ${exportPreview.riskOk ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>

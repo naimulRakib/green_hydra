@@ -1,0 +1,468 @@
+table_name,column_name,data_type,is_nullable,column_default
+community_alerts,id,uuid,NO,uuid_generate_v4()
+community_alerts,zone_id,character varying,YES,null
+community_alerts,alert_type,USER-DEFINED,NO,null
+community_alerts,epicenter,USER-DEFINED,NO,null
+community_alerts,radius_meter,integer,NO,null
+community_alerts,trigger_reason,text,NO,null
+community_alerts,trigger_scan_ids,ARRAY,YES,null
+community_alerts,case_count,integer,YES,null
+community_alerts,alert_message_bn,text,NO,null
+community_alerts,is_active,boolean,YES,true
+community_alerts,resolved_at,timestamp with time zone,YES,null
+community_alerts,created_at,timestamp with time zone,YES,now()
+crop_market_prices,id,uuid,NO,gen_random_uuid()
+crop_market_prices,land_id,uuid,NO,null
+crop_market_prices,farmer_id,uuid,NO,null
+crop_market_prices,crop_name,text,NO,null
+crop_market_prices,crop_id,character varying,YES,null
+crop_market_prices,price_per_maund,numeric,NO,null
+crop_market_prices,updated_at,timestamp with time zone,YES,now()
+data_buyers,id,uuid,NO,gen_random_uuid()
+data_buyers,org_name,text,NO,null
+data_buyers,org_type,text,NO,null
+data_buyers,api_key,text,YES,null
+data_buyers,subscription_tier,text,YES,'basic'::text
+data_buyers,can_access_risk_scores,boolean,YES,false
+data_buyers,can_access_loss_estimates,boolean,YES,false
+data_buyers,can_access_heavy_metals,boolean,YES,false
+data_buyers,can_access_raw_scans,boolean,YES,false
+data_buyers,is_active,boolean,YES,true
+data_buyers,licensed_districts,ARRAY,YES,'{}'::text[]
+data_buyers,monthly_fee_bdt,numeric,YES,null
+data_buyers,created_at,timestamp with time zone,YES,now()
+data_export_logs,id,uuid,NO,gen_random_uuid()
+data_export_logs,buyer_id,uuid,YES,null
+data_export_logs,export_type,text,NO,null
+data_export_logs,district,text,YES,null
+data_export_logs,records_count,integer,YES,1
+data_export_logs,query_params,jsonb,YES,null
+data_export_logs,exported_at,timestamp with time zone,YES,now()
+data_export_logs,status,text,YES,'success'::text
+diagnosis_cache,id,uuid,NO,uuid_generate_v4()
+diagnosis_cache,grid_cell_id,character varying,NO,null
+diagnosis_cache,weather_hash,character varying,NO,null
+diagnosis_cache,symptom_hash,character varying,NO,null
+diagnosis_cache,confirmed_disease_id,character varying,YES,null
+diagnosis_cache,remedy_id,character varying,YES,null
+diagnosis_cache,cached_diagnosis_bn,text,NO,null
+diagnosis_cache,hit_count,integer,YES,0
+diagnosis_cache,last_hit_at,timestamp with time zone,YES,null
+diagnosis_cache,created_at,timestamp with time zone,YES,now()
+diagnosis_cache,expires_at,timestamp with time zone,NO,null
+diagnosis_cache,abiotic_bucket,text,YES,'low'::text
+diagnosis_cache,pollutant_id,text,YES,null
+diagnostic_cache,id,uuid,NO,uuid_generate_v4()
+diagnostic_cache,farmer_id,uuid,YES,null
+diagnostic_cache,crop_name,text,NO,null
+diagnostic_cache,zone_id,text,NO,null
+diagnostic_cache,survey_ph,text,YES,null
+diagnostic_cache,survey_water,text,YES,null
+diagnostic_cache,environmental_score,double precision,YES,null
+diagnostic_cache,visual_symptoms,text,NO,null
+diagnostic_cache,symptom_embedding,USER-DEFINED,YES,null
+diagnostic_cache,final_diagnosis,text,NO,null
+diagnostic_cache,ai_reasoning,text,NO,null
+diagnostic_cache,remedy,text,NO,null
+diagnostic_cache,created_at,timestamp with time zone,YES,now()
+farm_profiles,id,uuid,NO,gen_random_uuid()
+farm_profiles,farmer_id,uuid,NO,null
+farm_profiles,land_id,uuid,NO,null
+farm_profiles,soil_texture,character varying,YES,null
+farm_profiles,soil_drainage,character varying,YES,null
+farm_profiles,soil_ph,character varying,YES,'Normal'::character varying
+farm_profiles,soil_organic,character varying,YES,null
+farm_profiles,soil_compaction,character varying,YES,null
+farm_profiles,water_source,character varying,YES,null
+farm_profiles,water_color,character varying,YES,null
+farm_profiles,water_odor,character varying,YES,null
+farm_profiles,water_risk,character varying,YES,'Clear'::character varying
+farm_profiles,crop_stage,character varying,YES,null
+farm_profiles,fertilizer_pattern,character varying,YES,null
+farm_profiles,monoculture_years,character varying,YES,null
+farm_profiles,yield_trend,character varying,YES,null
+farm_profiles,pest_level,character varying,YES,'Low'::character varying
+farm_profiles,pests_seen,ARRAY,YES,null
+farm_profiles,weekly_weather,character varying,YES,null
+farm_profiles,smoke_exposure,boolean,YES,false
+farm_profiles,canal_contamination,boolean,YES,false
+farm_profiles,neighbor_problem,boolean,YES,false
+farm_profiles,arsenic_risk,boolean,YES,false
+farm_profiles,iron_risk,boolean,YES,false
+farm_profiles,fish_kill,boolean,YES,false
+farm_profiles,scan_context,text,YES,null
+farm_profiles,last_survey_week,integer,YES,null
+farm_profiles,last_survey_year,integer,YES,null
+farm_profiles,updated_at,timestamp with time zone,YES,now()
+farm_risk_scores,id,uuid,NO,gen_random_uuid()
+farm_risk_scores,land_id,uuid,NO,null
+farm_risk_scores,farmer_id,uuid,NO,null
+farm_risk_scores,risk_score,integer,NO,null
+farm_risk_scores,risk_level,text,NO,null
+farm_risk_scores,breakdown,jsonb,NO,'{}'::jsonb
+farm_risk_scores,dominant_threat,text,YES,null
+farm_risk_scores,advice_bn,text,YES,null
+farm_risk_scores,calculated_at,timestamp with time zone,NO,now()
+farm_risk_scores,valid_until,timestamp with time zone,NO,(now() + '7 days'::interval)
+farm_risk_scores,is_current,boolean,NO,true
+farmer_lands,land_id,uuid,NO,uuid_generate_v4()
+farmer_lands,farmer_id,uuid,NO,null
+farmer_lands,land_name,text,NO,null
+farmer_lands,land_name_bn,text,YES,null
+farmer_lands,boundary,USER-DEFINED,NO,null
+farmer_lands,area_sqm,double precision,YES,null
+farmer_lands,area_bigha,double precision,YES,null
+farmer_lands,crop_id,character varying,YES,null
+farmer_lands,zone_id,character varying,YES,null
+farmer_lands,is_active,boolean,YES,true
+farmer_lands,notes_bn,text,YES,null
+farmer_lands,created_at,timestamp with time zone,YES,now()
+farmer_lands,updated_at,timestamp with time zone,YES,now()
+farmers,id,uuid,NO,uuid_generate_v4()
+farmers,phone_number,character varying,NO,null
+farmers,name_bn,text,YES,null
+farmers,zone_id,character varying,YES,null
+farmers,farm_location,USER-DEFINED,YES,null
+farmers,farm_area_bigha,numeric,YES,null
+farmers,badge_level,USER-DEFINED,YES,'New'::farmer_badge_enum
+farmers,total_scans,integer,YES,0
+farmers,verified_scans,integer,YES,0
+farmers,trust_score,double precision,YES,0.5
+farmers,data_sharing_consent,boolean,YES,false
+farmers,sms_consent,boolean,YES,true
+farmers,created_at,timestamp with time zone,YES,now()
+farmers,updated_at,timestamp with time zone,YES,now()
+geography_columns,f_table_catalog,name,YES,null
+geography_columns,f_table_schema,name,YES,null
+geography_columns,f_table_name,name,YES,null
+geography_columns,f_geography_column,name,YES,null
+geography_columns,coord_dimension,integer,YES,null
+geography_columns,srid,integer,YES,null
+geography_columns,type,text,YES,null
+geometry_columns,f_table_catalog,character varying,YES,null
+geometry_columns,f_table_schema,name,YES,null
+geometry_columns,f_table_name,name,YES,null
+geometry_columns,f_geometry_column,name,YES,null
+geometry_columns,coord_dimension,integer,YES,null
+geometry_columns,srid,integer,YES,null
+geometry_columns,type,character varying,YES,null
+heavy_metal_reports,id,uuid,NO,gen_random_uuid()
+heavy_metal_reports,land_id,uuid,YES,null
+heavy_metal_reports,farmer_id,uuid,YES,null
+heavy_metal_reports,scan_log_id,uuid,YES,null
+heavy_metal_reports,reported_via,text,NO,null
+heavy_metal_reports,metal_type,text,NO,null
+heavy_metal_reports,confidence_score,numeric,NO,null
+heavy_metal_reports,source_factory_id,uuid,YES,null
+heavy_metal_reports,geom,USER-DEFINED,NO,null
+heavy_metal_reports,district,text,YES,null
+heavy_metal_reports,upazila,text,YES,null
+heavy_metal_reports,reported_at,timestamp with time zone,YES,now()
+heavy_metal_reports,verified,boolean,YES,false
+heavy_metal_reports,verified_by,text,YES,null
+heavy_metal_reports,severity,text,YES,null
+heavy_metal_reports,notes,text,YES,null
+heavy_metal_reports,is_anonymized_for_export,boolean,YES,true
+industrial_hotspots,id,uuid,NO,uuid_generate_v4()
+industrial_hotspots,factory_name,character varying,NO,null
+industrial_hotspots,factory_name_bn,text,YES,null
+industrial_hotspots,industry_type,character varying,NO,null
+industrial_hotspots,location,USER-DEFINED,NO,null
+industrial_hotspots,max_plume_km,double precision,NO,5.0
+industrial_hotspots,plume_cone_deg,double precision,NO,60.0
+industrial_hotspots,primary_pollutant_id,character varying,YES,null
+industrial_hotspots,pollutants_list,jsonb,YES,'[]'::jsonb
+industrial_hotspots,active_months,ARRAY,YES,null
+industrial_hotspots,is_currently_active,boolean,YES,true
+industrial_hotspots,impact_description_bn,text,YES,null
+industrial_hotspots,data_source,character varying,YES,null
+industrial_hotspots,created_at,timestamp with time zone,YES,now()
+kb_crops,crop_id,character varying,NO,null
+kb_crops,crop_name_en,character varying,NO,null
+kb_crops,crop_name_bn,text,NO,null
+kb_crops,crop_family,character varying,YES,null
+kb_crops,seasons,ARRAY,YES,'{}'::text[]
+kb_crops,planting_months,ARRAY,YES,null
+kb_crops,harvest_months,ARRAY,YES,null
+kb_crops,suitable_zones,ARRAY,YES,null
+kb_crops,soil_pref,ARRAY,YES,null
+kb_crops,growth_temp_min,double precision,YES,null
+kb_crops,growth_temp_max,double precision,YES,null
+kb_crops,optimal_humidity_min,integer,YES,null
+kb_crops,water_requirement,text,YES,null
+kb_crops,created_at,timestamp with time zone,YES,now()
+kb_crops,flood_tolerant,boolean,YES,false
+kb_crops,submergence_tolerance_days,integer,YES,0
+kb_crops,drought_tolerant,boolean,YES,false
+kb_crops,drought_tolerance_note,character varying,YES,NULL::character varying
+kb_crops,salinity_tolerant,boolean,YES,false
+kb_crops,max_salinity_dsm,numeric,YES,0
+kb_crops,cold_tolerant,boolean,YES,false
+kb_crops,min_viable_temp_c,double precision,YES,15
+kb_crops,duration_days_min,integer,YES,null
+kb_crops,duration_days_max,integer,YES,null
+kb_crops,brri_variety_code,character varying,YES,NULL::character varying
+kb_crops,stress_adaptation,ARRAY,YES,'{}'::text[]
+kb_crops,yield_ton_per_ha_min,numeric,YES,NULL::numeric
+kb_crops,yield_ton_per_ha_max,numeric,YES,NULL::numeric
+kb_crops,special_notes_bn,text,YES,null
+kb_diseases,disease_id,character varying,NO,null
+kb_diseases,disease_name_en,character varying,NO,null
+kb_diseases,disease_name_bn,text,NO,null
+kb_diseases,disease_type,USER-DEFINED,NO,null
+kb_diseases,affected_crops,ARRAY,YES,null
+kb_diseases,shape_signature,character varying,YES,null
+kb_diseases,color_center,character varying,YES,null
+kb_diseases,color_margin,character varying,YES,null
+kb_diseases,texture_note,character varying,YES,null
+kb_diseases,humidity_min,integer,YES,null
+kb_diseases,temp_min,double precision,YES,null
+kb_diseases,temp_max,double precision,YES,null
+kb_diseases,favored_conditions,text,YES,null
+kb_diseases,validation_question_id,character varying,YES,null
+kb_diseases,expected_answer,character varying,YES,null
+kb_diseases,can_mimic_pollution,boolean,YES,false
+kb_diseases,differentiator_bn,text,YES,null
+kb_diseases,remedy_id,character varying,YES,null
+kb_diseases,ai_confidence_hint,double precision,YES,0.85
+kb_diseases,created_at,timestamp with time zone,YES,now()
+kb_industrial_pollutants,pollutant_id,character varying,NO,null
+kb_industrial_pollutants,pollutant_name,character varying,NO,null
+kb_industrial_pollutants,source_industries,ARRAY,YES,null
+kb_industrial_pollutants,damage_pattern_bn,text,YES,null
+kb_industrial_pollutants,color_signature,character varying,YES,null
+kb_industrial_pollutants,spread_pattern,character varying,YES,null
+kb_industrial_pollutants,max_travel_km,double precision,YES,5.0
+kb_industrial_pollutants,plume_spread_deg,double precision,YES,60.0
+kb_industrial_pollutants,worse_in_humidity,boolean,YES,true
+kb_industrial_pollutants,worse_in_rain,boolean,YES,true
+kb_industrial_pollutants,affected_crops,ARRAY,YES,null
+kb_industrial_pollutants,remedy_id,character varying,YES,null
+kb_industrial_pollutants,created_at,timestamp with time zone,YES,now()
+kb_remedies,remedy_id,character varying,NO,null
+kb_remedies,title_en,character varying,NO,null
+kb_remedies,title_bn,text,NO,null
+kb_remedies,remedy_type,character varying,YES,null
+kb_remedies,severity,character varying,YES,null
+kb_remedies,eco_friendly,boolean,YES,false
+kb_remedies,headline_bn,text,NO,null
+kb_remedies,reality_check_bn,text,YES,null
+kb_remedies,action_steps_bn,jsonb,NO,null
+kb_remedies,estimated_cost_bdt,character varying,YES,null
+kb_remedies,recovery_time,character varying,YES,null
+kb_remedies,prevention_bn,text,YES,null
+kb_remedies,escalation_trigger_bn,text,YES,null
+kb_remedies,created_at,timestamp with time zone,YES,now()
+kb_remedies,updated_at,timestamp with time zone,YES,now()
+kb_zones,zone_id,character varying,NO,null
+kb_zones,zone_name_en,character varying,NO,null
+kb_zones,zone_name_bn,text,NO,null
+kb_zones,district,character varying,YES,null
+kb_zones,division,character varying,YES,null
+kb_zones,soil_type_en,character varying,YES,null
+kb_zones,soil_ph_min,numeric,YES,null
+kb_zones,soil_ph_max,numeric,YES,null
+kb_zones,heavy_metal_risk,boolean,YES,false
+kb_zones,unsuitable_crops,jsonb,YES,'[]'::jsonb
+kb_zones,center_lat,double precision,NO,null
+kb_zones,center_lng,double precision,NO,null
+kb_zones,data_verified_by,text,YES,null
+kb_zones,last_updated,timestamp with time zone,YES,now()
+kb_zones,created_at,timestamp with time zone,YES,now()
+kb_zones,flood_risk_level,character varying,YES,'Low'::character varying
+kb_zones,flood_risk_months,ARRAY,YES,'{}'::integer[]
+kb_zones,avg_flood_depth_cm,integer,YES,0
+kb_zones,submergence_days_max,integer,YES,0
+kb_zones,drought_risk_level,character varying,YES,'Low'::character varying
+kb_zones,drought_risk_months,ARRAY,YES,'{}'::integer[]
+kb_zones,annual_rainfall_mm,integer,YES,2000
+kb_zones,salinity_level,character varying,YES,'None'::character varying
+kb_zones,salinity_peak_months,ARRAY,YES,'{}'::integer[]
+kb_zones,soil_ec_dsm,numeric,YES,0
+kb_zones,cold_risk_level,character varying,YES,'Low'::character varying
+kb_zones,cold_risk_months,ARRAY,YES,'{}'::integer[]
+kb_zones,cyclone_risk_level,character varying,YES,'Low'::character varying
+kb_zones,primary_stress,character varying,YES,'None'::character varying
+kb_zones,adaptive_strategy_bn,text,YES,null
+kb_zones,recommended_variety_ids,ARRAY,YES,'{}'::text[]
+kb_zones,arsenic_zone_risk,character varying,YES,'Low'::character varying
+kb_zones,known_metal_types,ARRAY,YES,'{}'::text[]
+kb_zones,metal_risk_source,text,YES,'inferred'::text
+loss_estimates,id,uuid,NO,gen_random_uuid()
+loss_estimates,land_id,uuid,NO,null
+loss_estimates,farmer_id,uuid,NO,null
+loss_estimates,risk_score_id,uuid,YES,null
+loss_estimates,expected_loss_bdt,numeric,NO,0
+loss_estimates,loss_percentage,numeric,NO,0
+loss_estimates,crop_name,text,YES,null
+loss_estimates,area_acres,numeric,YES,null
+loss_estimates,price_per_maund,numeric,YES,null
+loss_estimates,yield_per_acre,numeric,YES,null
+loss_estimates,estimated_at,timestamp with time zone,NO,now()
+satellite_water_data,id,uuid,NO,gen_random_uuid()
+satellite_water_data,grid_cell_id,character varying,NO,null
+satellite_water_data,location,USER-DEFINED,NO,null
+satellite_water_data,recorded_at,timestamp with time zone,NO,now()
+satellite_water_data,water_quality_index,double precision,YES,null
+satellite_water_data,turbidity,double precision,YES,null
+satellite_water_data,chlorophyll,double precision,YES,null
+satellite_water_data,suspected_pollution,boolean,YES,false
+satellite_water_data,color_estimate,character varying,YES,null
+scan_logs,id,uuid,NO,uuid_generate_v4()
+scan_logs,farmer_id,uuid,YES,null
+scan_logs,crop_id,character varying,YES,null
+scan_logs,growth_stage_days,integer,YES,null
+scan_logs,scan_location,USER-DEFINED,NO,null
+scan_logs,grid_cell_id,character varying,YES,null
+scan_logs,image_url,text,YES,null
+scan_logs,vision_output,jsonb,YES,null
+scan_logs,questionnaire_answers,jsonb,YES,null
+scan_logs,environmental_context,jsonb,YES,null
+scan_logs,stress_type,USER-DEFINED,YES,null
+scan_logs,confirmed_disease_id,character varying,YES,null
+scan_logs,confirmed_pollutant_id,character varying,YES,null
+scan_logs,remedy_id,character varying,YES,null
+scan_logs,ai_confidence,double precision,YES,null
+scan_logs,ai_model_used,character varying,YES,null
+scan_logs,tokens_used,integer,YES,null
+scan_logs,verification_status,USER-DEFINED,YES,'unverified'::verification_status_enum
+scan_logs,verified_by_farmer_id,uuid,YES,null
+scan_logs,verified_at,timestamp with time zone,YES,null
+scan_logs,rag_trust_weight,double precision,YES,null
+scan_logs,use_for_epidemic_alert,boolean,YES,null
+scan_logs,embedding,USER-DEFINED,YES,null
+scan_logs,created_at,timestamp with time zone,YES,now()
+scan_logs,land_id,uuid,YES,null
+scan_logs,biotic_score,double precision,YES,null
+scan_logs,abiotic_score,double precision,YES,null
+scan_logs,heavy_metal_score,double precision,YES,null
+scan_logs,secondary_cause,text,YES,null
+scan_logs,compound_stress,boolean,YES,false
+scan_logs,overrides_applied,ARRAY,YES,null
+spatial_ref_sys,srid,integer,NO,null
+spatial_ref_sys,auth_name,character varying,YES,null
+spatial_ref_sys,auth_srid,integer,YES,null
+spatial_ref_sys,srtext,character varying,YES,null
+spatial_ref_sys,proj4text,character varying,YES,null
+spray_events,id,uuid,NO,uuid_generate_v4()
+spray_events,land_id,uuid,NO,null
+spray_events,farmer_id,uuid,NO,null
+spray_events,chemical_name,text,NO,null
+spray_events,chemical_name_bn,text,YES,null
+spray_events,chemical_type,character varying,YES,null
+spray_events,active_ingredient,text,YES,null
+spray_events,dose_per_bigha,text,YES,null
+spray_events,sprayed_at,timestamp with time zone,YES,now()
+spray_events,expires_at,timestamp with time zone,NO,null
+spray_events,harm_radius_m,integer,YES,50
+spray_events,risk_level,character varying,YES,'red'::character varying
+spray_events,is_active,boolean,YES,true
+spray_events,visible_to_neighbors,boolean,YES,true
+spray_events,reported_by,character varying,YES,'farmer'::character varying
+spray_events,notes_bn,text,YES,null
+spray_events,created_at,timestamp with time zone,YES,now()
+survey_questions,id,uuid,NO,gen_random_uuid()
+survey_questions,question_key,character varying,NO,null
+survey_questions,category,character varying,NO,null
+survey_questions,question_bn,text,NO,null
+survey_questions,question_en,text,YES,null
+survey_questions,input_type,character varying,YES,'single'::character varying
+survey_questions,options,jsonb,YES,null
+survey_questions,display_order,integer,YES,0
+survey_questions,is_active,boolean,YES,true
+survey_questions,created_at,timestamp with time zone,YES,now()
+surveys,id,uuid,NO,gen_random_uuid()
+surveys,farmer_id,uuid,NO,null
+surveys,land_id,uuid,NO,null
+surveys,week_number,integer,NO,null
+surveys,year,integer,NO,null
+surveys,answers,jsonb,NO,'{}'::jsonb
+surveys,soil_ph_risk,character varying,YES,'Normal'::character varying
+surveys,water_risk,character varying,YES,'Clear'::character varying
+surveys,pest_level,character varying,YES,'Low'::character varying
+surveys,env_stress,character varying,YES,'None'::character varying
+surveys,submitted_at,timestamp with time zone,YES,now()
+surveys,updated_at,timestamp with time zone,YES,now()
+v_farm_risk_summary,land_id,uuid,YES,null
+v_farm_risk_summary,farmer_id,uuid,YES,null
+v_farm_risk_summary,land_name,text,YES,null
+v_farm_risk_summary,land_name_bn,text,YES,null
+v_farm_risk_summary,area_bigha,double precision,YES,null
+v_farm_risk_summary,crop_id,character varying,YES,null
+v_farm_risk_summary,zone_id,character varying,YES,null
+v_farm_risk_summary,district,character varying,YES,null
+v_farm_risk_summary,risk_score,integer,YES,null
+v_farm_risk_summary,risk_level,text,YES,null
+v_farm_risk_summary,breakdown,jsonb,YES,null
+v_farm_risk_summary,dominant_threat,text,YES,null
+v_farm_risk_summary,advice_bn,text,YES,null
+v_farm_risk_summary,calculated_at,timestamp with time zone,YES,null
+v_farm_risk_summary,valid_until,timestamp with time zone,YES,null
+v_farm_risk_summary,expected_loss_bdt,numeric,YES,null
+v_farm_risk_summary,loss_percentage,numeric,YES,null
+v_farm_risk_summary,loss_crop_name,text,YES,null
+v_farm_risk_summary,estimated_at,timestamp with time zone,YES,null
+water_alert_reads,id,uuid,NO,gen_random_uuid()
+water_alert_reads,farmer_id,uuid,YES,null
+water_alert_reads,event_id,uuid,YES,null
+water_alert_reads,read_at,timestamp with time zone,YES,now()
+water_pollution_events,event_id,uuid,NO,gen_random_uuid()
+water_pollution_events,water_source_id,uuid,YES,null
+water_pollution_events,hotspot_id,uuid,YES,null
+water_pollution_events,pollution_type,character varying,YES,null
+water_pollution_events,severity,character varying,YES,null
+water_pollution_events,source,character varying,YES,null
+water_pollution_events,water_color,character varying,YES,null
+water_pollution_events,fish_kill_reported,boolean,YES,false
+water_pollution_events,odor_reported,boolean,YES,false
+water_pollution_events,farmer_count,integer,YES,1
+water_pollution_events,alert_message_bn,text,NO,null
+water_pollution_events,is_active,boolean,YES,true
+water_pollution_events,doe_notified,boolean,YES,false
+water_pollution_events,doe_notified_at,timestamp with time zone,YES,null
+water_pollution_events,evidence_urls,ARRAY,YES,'{}'::text[]
+water_pollution_events,reported_at,timestamp with time zone,YES,now()
+water_pollution_events,resolved_at,timestamp with time zone,YES,null
+water_pollution_events,estimated_safe_after,timestamp with time zone,YES,null
+water_pollution_events,fish_kill,boolean,YES,false
+water_sources,source_id,uuid,NO,gen_random_uuid()
+water_sources,source_name,text,YES,null
+water_sources,source_name_bn,text,YES,null
+water_sources,source_type,character varying,YES,null
+water_sources,location,USER-DEFINED,NO,null
+water_sources,reported_by,uuid,YES,null
+water_sources,verified_count,integer,YES,1
+water_sources,risk_zone,character varying,YES,'safe'::character varying
+water_sources,risk_reason,text,YES,null
+water_sources,risk_updated_at,timestamp with time zone,YES,null
+water_sources,last_color_report,character varying,YES,null
+water_sources,last_odor_report,boolean,YES,false
+water_sources,fish_kill_reports,integer,YES,0
+water_sources,total_reports,integer,YES,0
+water_sources,danger_reports,integer,YES,0
+water_sources,nearest_hotspot_id,uuid,YES,null
+water_sources,distance_to_hotspot_m,double precision,YES,null
+water_sources,last_ndwi_value,double precision,YES,null
+water_sources,last_satellite_check,timestamp with time zone,YES,null
+water_sources,last_reported_at,timestamp with time zone,YES,now()
+water_sources,created_at,timestamp with time zone,YES,now()
+weather_details,id,uuid,NO,uuid_generate_v4()
+weather_details,farmer_id,uuid,YES,null
+weather_details,weather_data,jsonb,NO,null
+weather_details,last_fetched_at,timestamp with time zone,YES,now()
+weather_grid_cache,grid_cell_id,character varying,NO,null
+weather_grid_cache,center_lat,double precision,NO,null
+weather_grid_cache,center_lng,double precision,NO,null
+weather_grid_cache,compressed_string,text,NO,null
+weather_grid_cache,temp_celsius,double precision,YES,null
+weather_grid_cache,humidity_pct,integer,YES,null
+weather_grid_cache,wind_speed_kmh,double precision,YES,null
+weather_grid_cache,wind_direction_deg,double precision,YES,null
+weather_grid_cache,wind_direction_card,character varying,YES,null
+weather_grid_cache,rainfall_mm_24h,double precision,YES,0
+weather_grid_cache,avg_temp_7d,double precision,YES,null
+weather_grid_cache,avg_humidity_7d,double precision,YES,null
+weather_grid_cache,rainfall_7d_mm,double precision,YES,null
+weather_grid_cache,consecutive_wet_days,integer,YES,0
+weather_grid_cache,fetched_at,timestamp with time zone,YES,now()
+weather_grid_cache,expires_at,timestamp with time zone,YES,(now() + '03:00:00'::interval)

@@ -50,6 +50,8 @@ diagnosis_cache,hit_count,integer,YES,0
 diagnosis_cache,last_hit_at,timestamp with time zone,YES,null
 diagnosis_cache,created_at,timestamp with time zone,YES,now()
 diagnosis_cache,expires_at,timestamp with time zone,NO,null
+diagnosis_cache,abiotic_bucket,text,YES,'low'::text
+diagnosis_cache,pollutant_id,text,YES,null
 diagnostic_cache,id,uuid,NO,uuid_generate_v4()
 diagnostic_cache,farmer_id,uuid,YES,null
 diagnostic_cache,crop_name,text,NO,null
@@ -103,6 +105,12 @@ farm_risk_scores,advice_bn,text,YES,null
 farm_risk_scores,calculated_at,timestamp with time zone,NO,now()
 farm_risk_scores,valid_until,timestamp with time zone,NO,(now() + '7 days'::interval)
 farm_risk_scores,is_current,boolean,NO,true
+farm_risk_scores,recommended_crops,ARRAY,YES,null
+farm_risk_scores,avoid_crops,ARRAY,YES,null
+farm_risk_scores,remediation_status,text,YES,null
+farm_risk_scores,last_assessment_date,timestamp with time zone,YES,null
+farm_risk_scores,next_assessment_due,timestamp with time zone,YES,null
+farm_risk_scores,last_scan_id,uuid,YES,null
 farmer_lands,land_id,uuid,NO,uuid_generate_v4()
 farmer_lands,farmer_id,uuid,NO,null
 farmer_lands,land_name,text,NO,null
@@ -161,6 +169,8 @@ heavy_metal_reports,verified_by,text,YES,null
 heavy_metal_reports,severity,text,YES,null
 heavy_metal_reports,notes,text,YES,null
 heavy_metal_reports,is_anonymized_for_export,boolean,YES,true
+heavy_metal_reports,heavy_metal_strategy,jsonb,YES,null
+heavy_metal_reports,evidence_chain,jsonb,YES,null
 industrial_hotspots,id,uuid,NO,uuid_generate_v4()
 industrial_hotspots,factory_name,character varying,NO,null
 industrial_hotspots,factory_name_bn,text,YES,null
@@ -179,7 +189,7 @@ kb_crops,crop_id,character varying,NO,null
 kb_crops,crop_name_en,character varying,NO,null
 kb_crops,crop_name_bn,text,NO,null
 kb_crops,crop_family,character varying,YES,null
-kb_crops,seasons,ARRAY,NO,null
+kb_crops,seasons,ARRAY,YES,'{}'::text[]
 kb_crops,planting_months,ARRAY,YES,null
 kb_crops,harvest_months,ARRAY,YES,null
 kb_crops,suitable_zones,ARRAY,YES,null
@@ -331,6 +341,15 @@ scan_logs,use_for_epidemic_alert,boolean,YES,null
 scan_logs,embedding,USER-DEFINED,YES,null
 scan_logs,created_at,timestamp with time zone,YES,now()
 scan_logs,land_id,uuid,YES,null
+scan_logs,biotic_score,double precision,YES,null
+scan_logs,abiotic_score,double precision,YES,null
+scan_logs,heavy_metal_score,double precision,YES,null
+scan_logs,secondary_cause,text,YES,null
+scan_logs,compound_stress,boolean,YES,false
+scan_logs,overrides_applied,ARRAY,YES,null
+scan_logs,reasoning_chain,jsonb,YES,null
+scan_logs,evidence_summary,jsonb,YES,null
+scan_logs,contradictions_resolved,jsonb,YES,null
 spatial_ref_sys,srid,integer,NO,null
 spatial_ref_sys,auth_name,character varying,YES,null
 spatial_ref_sys,auth_srid,integer,YES,null

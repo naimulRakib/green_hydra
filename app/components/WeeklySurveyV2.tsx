@@ -10,6 +10,8 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "../utils/supabase/client";
+import WaterSourceReportStep from "./WaterSourceReportStep";
+import type { WaterColor, WaterSourceType } from "@/app/types/water";
 
 // ─── Types ────────────────────────────────────────────────────────
 interface QuestionOption {
@@ -71,7 +73,13 @@ function getISOWeek(date: Date): number {
 }
 
 // ─── Component ────────────────────────────────────────────────────
-export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
+interface WeeklySurveyV2Props {
+  farmerId: string;
+  farmerLat?: number | null;
+  farmerLng?: number | null;
+}
+
+export default function WeeklySurveyV2({ farmerId, farmerLat = null, farmerLng = null }: WeeklySurveyV2Props) {
   const supabase = createClient();
 
   // State
@@ -89,6 +97,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
   
   const [profile, setProfile] = useState<Profile | null>(null);
   const [showProfile, setShowProfile] = useState(false);
+  const [showWaterStep, setShowWaterStep] = useState(false);
   const [surveyStatus, setSurveyStatus] = useState<
     | {
         has_survey?: boolean;
@@ -104,6 +113,45 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       }
     | null
   >(null);
+
+  function mapSurveySourceToWaterType(raw: string | undefined): WaterSourceType | null {
+    switch (raw) {
+      case "deep_tubewell":
+      case "shallow_tubewell":
+      case "submersible":
+        return "tubewell";
+      case "canal_govt":
+      case "canal_private":
+        return "canal";
+      case "river":
+        return "river";
+      case "pond":
+        return "pond";
+      case "rain_only":
+        return "other";
+      default:
+        return null;
+    }
+  }
+
+  function mapSurveyColorToWaterColor(raw: string | undefined): WaterColor | null {
+    switch (raw) {
+      case "clear":
+        return "clear";
+      case "slightly_turbid":
+        return "normal_monsoon";
+      case "yellow_orange":
+      case "rust_red":
+      case "dark_brown":
+        return "brown";
+      case "green_algae":
+        return "green";
+      case "black":
+        return "black";
+      default:
+        return null;
+    }
+  }
 
   // ─── Fetch lands ────────────────────────────────────────────────
   const fetchLands = useCallback(async () => {
@@ -247,6 +295,9 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       
       setSuccess(`সার্ভে সফলভাবে জমা হয়েছে! সপ্তাহ ${data.week_number}`);
       setActiveCategory(null);
+      const waterSource = typeof answers["water_source"] === "string" ? answers["water_source"] : undefined;
+      const shouldAskWaterSource = !!waterSource && !["deep_tubewell", "shallow_tubewell", "submersible"].includes(waterSource);
+      setShowWaterStep(shouldAskWaterSource);
       
       checkStatus(selectedLand);
     } catch (e: unknown) {
@@ -286,7 +337,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       {success && <div style={S.alertSuccess}>{success}</div>}
 
       {/* Land selector */}
-      {lands.length > 0 && !activeCategory && !showProfile && (
+      {lands.length > 0 && !activeCategory && !showProfile && !showWaterStep && (
         <div style={S.landBar}>
           <span style={S.landLabel}>জমি নির্বাচন:</span>
           <div style={S.landTabs}>
@@ -339,7 +390,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       )}
 
       {/* Category Selection (Landing) */}
-      {!activeCategory && !showProfile && (
+      {!activeCategory && !showProfile && !showWaterStep && (
         <div style={S.categoryGrid}>
           {CATEGORIES.map(cat => {
             const answeredCount = questions
@@ -364,7 +415,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       )}
 
       {/* Survey Questions */}
-      {activeCategory && currentQ && (
+      {activeCategory && currentQ && !showWaterStep && (
         <div style={S.surveyCard}>
           <div style={S.surveyHeader}>
             <button style={S.btnBack} onClick={() => setActiveCategory(null)}>← ফিরে যান</button>
@@ -437,7 +488,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       )}
 
       {/* Submit All Button (if any answers) */}
-      {!activeCategory && !showProfile && Object.keys(answers).length > 0 && (
+      {!activeCategory && !showProfile && !showWaterStep && Object.keys(answers).length > 0 && (
         <div style={S.submitSection}>
           <p style={S.submitInfo}>
             {Object.keys(answers).length} টি প্রশ্নের উত্তর দেওয়া হয়েছে
@@ -453,7 +504,7 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
       )}
 
       {/* Risk Summary (if survey done this week) */}
-      {surveyStatus?.has_survey && !activeCategory && !showProfile && (
+      {surveyStatus?.has_survey && !activeCategory && !showProfile && !showWaterStep && (
         <div style={S.riskSummary}>
           <p style={S.riskTitle}>এই সপ্তাহের ঝুঁকি সারাংশ:</p>
           <div style={S.riskGrid}>
@@ -462,6 +513,26 @@ export default function WeeklySurveyV2({ farmerId }: { farmerId: string }) {
             <RiskBadge label="পোকা" value={surveyStatus.risks?.pest} />
             <RiskBadge label="পরিবেশ" value={surveyStatus.risks?.environment} />
           </div>
+        </div>
+      )}
+
+      {showWaterStep && selectedLand && farmerLat != null && farmerLng != null && (
+        <div style={S.waterStepWrap}>
+          <WaterSourceReportStep
+            landId={selectedLand}
+            farmerLat={farmerLat}
+            farmerLng={farmerLng}
+            initialType={mapSurveySourceToWaterType(typeof answers["water_source"] === "string" ? answers["water_source"] : undefined)}
+            initialColor={mapSurveyColorToWaterColor(typeof answers["water_color"] === "string" ? answers["water_color"] : undefined)}
+            initialOdor={typeof answers["water_odor"] === "string" && answers["water_odor"] !== "none"}
+            onComplete={() => {
+              setShowWaterStep(false);
+              setSuccess("পানির উৎস সফলভাবে যোগ হয়েছে — কমিউনিটি ওভারভিউতে দেখা যাবে।");
+            }}
+            onSkip={() => {
+              setShowWaterStep(false);
+            }}
+          />
         </div>
       )}
     </div>
@@ -763,5 +834,10 @@ const S: Record<string, React.CSSProperties> = {
     color: "#10b981",
     wordBreak: "break-all",
     fontFamily: "monospace",
+  },
+  waterStepWrap: {
+    padding: 16,
+    borderTop: "1px solid #e5e7eb",
+    background: "#f8fafc",
   },
 };

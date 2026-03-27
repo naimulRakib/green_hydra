@@ -26,84 +26,80 @@ export async function fetchISRICSoilData(
   }
 
   try {
-    // SoilGrids REST API endpoint for properties at a specific point
-    // We request phh2o (pH), soc (Soil Organic Carbon), and clay
-    // We look at depth 0-5cm (surface level) primarily.
-    const url = `https://rest.isric.org/soilgrids/v2.0/properties/query?lon=${lng}&lat=${lat}&property=phh2o&property=soc&property=clay&depth=0-5cm&value=mean`
+    const url =
+      `https://rest.isric.org/soilgrids/v2.0/properties/query` +
+      `?lon=${lng.toFixed(4)}&lat=${lat.toFixed(4)}` +
+      `&property=phh2o&property=soc&property=clay&depth=0-5cm&value=mean`
 
     const response = await fetch(url, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json'
-      },
-      // 5 second timeout so we don't block the AI scan flow
-      signal: AbortSignal.timeout(5000)
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000),
     })
 
-    if (!response.ok) {
-      console.error(`[ISRIC API] Failed to fetch soil data: ${response.statusText}`)
-      return fallback
-    }
+    if (!response.ok) throw new Error(`ISRIC HTTP ${response.status}: ${response.statusText}`)
 
     const data: unknown = await response.json()
-
-    // Parse the SoilGrids response structure
-    // Properties are arrays. We want the 'mean' value for the 0-5cm depth.
-    let ph: number | null = null
-    let soc: number | null = null
-    let clay: number | null = null
 
     function isRecord(v: unknown): v is Record<string, unknown> {
       return typeof v === 'object' && v !== null
     }
 
-    function getLayerMean(layers: unknown[], name: string): number | null {
-      const layer = layers.find((l) => isRecord(l) && l['name'] === name)
-      if (!layer || !isRecord(layer)) return null
+    // ISRIC returns all values multiplied by d_factor (always 10 for pH).
+    // e.g. raw mean = 65, d_factor = 10 → pH = 6.5
+    function getLayerValue(layers: unknown[], name: string): { value: number | null; dFactor: number } {
+      const layer = (layers as unknown[]).find(
+        (l) => isRecord(l) && l['name'] === name
+      )
+      if (!layer || !isRecord(layer)) return { value: null, dFactor: 10 }
+
+      const dFactor =
+        isRecord(layer['unit_measure']) &&
+        typeof (layer['unit_measure'] as Record<string, unknown>)['d_factor'] === 'number'
+          ? (layer['unit_measure'] as Record<string, unknown>)['d_factor'] as number
+          : 10
 
       const depths = layer['depths']
-      if (!Array.isArray(depths) || depths.length === 0 || !isRecord(depths[0])) return null
+      if (!Array.isArray(depths) || depths.length === 0 || !isRecord(depths[0]))
+        return { value: null, dFactor }
 
       const values = (depths[0] as Record<string, unknown>)['values']
-      if (!isRecord(values)) return null
+      if (!isRecord(values)) return { value: null, dFactor }
 
       const mean = values['mean']
-      return typeof mean === 'number' ? mean : null
+      return { value: typeof mean === 'number' ? mean : null, dFactor }
     }
 
-    let layers: unknown[] | null = null
+    let layers: unknown[] = []
     if (isRecord(data)) {
-      const properties = data['properties']
-      if (isRecord(properties)) {
-        const layersVal = properties['layers']
-        if (Array.isArray(layersVal)) layers = layersVal as unknown[]
+      const props = data['properties']
+      if (isRecord(props) && Array.isArray(props['layers'])) {
+        layers = props['layers'] as unknown[]
       }
     }
 
-    if (layers) {
-      // pH values in SoilGrids are multiplied by 10 (e.g., 65 means pH 6.5)
-      const rawPh = getLayerMean(layers, 'phh2o')
-      if (rawPh !== null) ph = rawPh / 10.0
+    const phRaw  = getLayerValue(layers, 'phh2o')
+    const socRaw = getLayerValue(layers, 'soc')
+    const clayRaw = getLayerValue(layers, 'clay')
 
-      // SOC in dg/kg
-      soc = getLayerMean(layers, 'soc')
-
-      // Clay in g/kg
-      clay = getLayerMean(layers, 'clay')
-    }
+    // Divide by d_factor to get real values
+    const ph   = phRaw.value  !== null ? phRaw.value  / phRaw.dFactor   : null
+    const soc  = socRaw.value !== null ? socRaw.value / socRaw.dFactor  : null
+    const clay = clayRaw.value !== null ? clayRaw.value / clayRaw.dFactor : null
 
     return {
       ph_h2o: ph,
       soil_organic_carbon: soc,
       clay_content: clay,
-      data_source: (ph || soc || clay) ? 'isric_soilgrids' : 'fallback'
+      data_source: (ph !== null || soc !== null || clay !== null) ? 'isric_soilgrids' : 'fallback',
     }
 
   } catch (error) {
-    console.error('[ISRIC API] Network exception or timeout fetching soil:', error)
+    console.warn('[ISRIC] fetch failed, using fallback:', error instanceof Error ? error.message : error)
     return fallback
   }
 }
+
 
 /**
  * Computes a risk modifier (0-10) based on soil pH.

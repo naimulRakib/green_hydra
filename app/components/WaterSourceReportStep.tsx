@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { reportWaterSource } from '@/app/actions/waterActions'
 import {
@@ -21,6 +21,9 @@ interface Props {
   farmerLng:  number
   onComplete: (sourceId: string) => void
   onSkip:     () => void
+  initialType?: WaterSourceType | null
+  initialColor?: WaterColor | null
+  initialOdor?: boolean
 }
 
 export default function WaterSourceReportStep({
@@ -29,10 +32,13 @@ export default function WaterSourceReportStep({
   farmerLng,
   onComplete,
   onSkip,
+  initialType = null,
+  initialColor = null,
+  initialOdor = false,
 }: Props) {
-  const [waterType,  setWaterType]  = useState<WaterSourceType | null>(null)
-  const [waterColor, setWaterColor] = useState<WaterColor | null>(null)
-  const [hasOdor,    setHasOdor]    = useState(false)
+  const [waterType,  setWaterType]  = useState<WaterSourceType | null>(initialType)
+  const [waterColor, setWaterColor] = useState<WaterColor | null>(initialColor)
+  const [hasOdor,    setHasOdor]    = useState(initialOdor)
   const [fishKill,   setFishKill]   = useState(false)
   const [pickedLat,  setPickedLat]  = useState<number | null>(null)
   const [pickedLng,  setPickedLng]  = useState<number | null>(null)
@@ -43,6 +49,12 @@ export default function WaterSourceReportStep({
   const [manualLat,  setManualLat]  = useState('')
   const [manualLng,  setManualLng]  = useState('')
   const [locMode,    setLocMode]    = useState<'map' | 'manual'>('map')
+
+  useEffect(() => {
+    setWaterType(initialType)
+    setWaterColor(initialColor)
+    setHasOdor(initialOdor)
+  }, [initialType, initialColor, initialOdor])
 
   const isTubewell  = waterType === 'tubewell'
   const hasLocation = isTubewell || (pickedLat && pickedLng)

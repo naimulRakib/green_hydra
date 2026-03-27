@@ -2,6 +2,7 @@
 
 import { createClient } from '@/app/utils/supabase/server'
 import { revalidatePath } from 'next/cache'
+import { fetchSatelliteWaterData } from './industrial'
 import type {
   WaterAlert,
   WaterSource,
@@ -91,8 +92,32 @@ export async function reportWaterSource(
     return { success: false, error: 'সংরক্ষণে সমস্যা হয়েছে' }
   }
 
+  const sourceId = data as string
+
+  // Best-effort satellite enrichment after user report is saved
+  const sat = await fetchSatelliteWaterData(input.lat, input.lng)
+  if (sat.success) {
+    const ndwiValue = typeof sat.data?.ndwi === 'number' && isFinite(sat.data.ndwi)
+      ? sat.data.ndwi
+      : null
+
+    const { error: enrichError } = await supabase
+      .from('water_sources')
+      .update({
+        last_satellite_check: new Date().toISOString(),
+        last_ndwi_value: ndwiValue,
+      })
+      .eq('source_id', sourceId)
+
+    if (enrichError) {
+      console.error('[Water] satellite enrichment update failed:', enrichError.message)
+    }
+  } else {
+    console.warn('[Water] satellite enrichment skipped:', sat.error)
+  }
+
   revalidatePath('/dashboard')
-  return { success: true, source_id: data as string }
+  return { success: true, source_id: sourceId }
 }
 
 // ─────────────────────────────────────────

@@ -34,3 +34,34 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Satellite water integration (optional real API)
+
+Water source reporting now attempts satellite enrichment after save.
+
+Set these env vars to use a real provider endpoint:
+
+```bash
+SATELLITE_WATER_API_URL=https://your-satellite-service.example.com/water
+SATELLITE_WATER_API_KEY=your_api_key
+```
+
+Expected POST JSON payload sent:
+
+```json
+{ "lat": 23.81, "lng": 90.41 }
+```
+
+Expected JSON response fields (all optional, with fallbacks):
+
+```json
+{
+  "grid_cell_id": "grid_2381_9041",
+  "water_quality_index": 72.5,
+  "turbidity": 12.4,
+  "chlorophyll": 8.1,
+  "suspected_pollution": false,
+  "color_estimate": "Clear/Blue",
+  "ndwi": 0.42
+}
+```

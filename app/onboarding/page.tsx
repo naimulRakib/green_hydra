@@ -19,12 +19,25 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+function nearestZone(lat: number, lng: number) {
+  return ZONES.reduce((best, z) =>
+    haversineKm(lat, lng, z.lat, z.lng) < haversineKm(lat, lng, best.lat, best.lng) ? z : best
+  , ZONES[0])
+}
+
+function isValidBDCoord(lat: number, lng: number) {
+  return lat >= 20.5 && lat <= 26.7 && lng >= 87.9 && lng <= 92.7
+}
+
 type Status = 'idle' | 'locating' | 'matching' | 'saving' | 'error'
 
 export default function OnboardingPage() {
   const [status, setStatus]     = useState<Status>('idle')
   const [zoneName, setZoneName] = useState('')
   const [error, setError]       = useState('')
+  const [manualLat, setManualLat] = useState('')
+  const [manualLng, setManualLng] = useState('')
+  const [manualLoading, setManualLoading] = useState(false)
 
   const statusMessages: Record<Status, string> = {
     idle:     'স্বয়ংক্রিয়ভাবে অবস্থান নির্ণয় করুন',
@@ -49,18 +62,18 @@ export default function OnboardingPage() {
         const { latitude: lat, longitude: lng } = position.coords
         setStatus('matching')
 
-        const zone = ZONES.reduce((best, z) =>
-          haversineKm(lat, lng, z.lat, z.lng) < haversineKm(lat, lng, best.lat, best.lng) ? z : best
-        , ZONES[0])
+        const zone = nearestZone(lat, lng)
 
         setZoneName(zone.name)
         setStatus('saving')
 
         try {
+          localStorage.setItem('farmer_location', JSON.stringify({ lat, lng }))
           await saveFarmerLocation(lat, lng, zone.id)
           // redirect happens inside saveFarmerLocation
-        } catch {
-          setError('সার্ভারে সেভ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।')
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : ''
+          setError(msg || 'সার্ভারে সেভ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।')
           setStatus('error')
         }
       },
@@ -70,6 +83,44 @@ export default function OnboardingPage() {
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
+  }
+
+  const handleManualSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (manualLoading || isLoading) return
+
+    setError('')
+
+    const lat = parseFloat(manualLat)
+    const lng = parseFloat(manualLng)
+
+    if (!isFinite(lat) || !isFinite(lng)) {
+      setError('সঠিক Latitude এবং Longitude দিন।')
+      setStatus('error')
+      return
+    }
+
+    if (!isValidBDCoord(lat, lng)) {
+      setError('বাংলাদেশের ভেতরের স্থানাঙ্ক দিন (Lat: 20.5-26.7, Lng: 87.9-92.7)।')
+      setStatus('error')
+      return
+    }
+
+    const zone = nearestZone(lat, lng)
+    setZoneName(zone.name)
+    setStatus('saving')
+    setManualLoading(true)
+
+    try {
+      localStorage.setItem('farmer_location', JSON.stringify({ lat, lng }))
+      await saveFarmerLocation(lat, lng, zone.id)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : ''
+      setError(msg || 'সার্ভারে সেভ করতে সমস্যা হয়েছে। আবার চেষ্টা করুন।')
+      setStatus('error')
+    } finally {
+      setManualLoading(false)
+    }
   }
 
   const isLoading = ['locating', 'matching', 'saving'].includes(status)
@@ -132,16 +183,67 @@ export default function OnboardingPage() {
           )}
 
           <button
+            type="button"
             onClick={handleDetect}
-            disabled={isLoading}
+            disabled={isLoading || manualLoading}
             className={`w-full font-semibold rounded-xl py-3 text-sm transition-all ${
-              isLoading
+              isLoading || manualLoading
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                 : 'bg-green-600 text-white hover:bg-green-700 shadow-sm hover:shadow-md active:scale-[0.98]'
             }`}
           >
             {isLoading ? statusMessages[status] : status === 'error' ? 'আবার চেষ্টা করুন' : statusMessages.idle}
           </button>
+
+          <div className="flex items-center gap-3 my-5">
+            <div className="h-px bg-gray-200 flex-1" />
+            <span className="text-xs text-gray-400">অথবা ম্যানুয়ালি দিন</span>
+            <div className="h-px bg-gray-200 flex-1" />
+          </div>
+
+          <form onSubmit={handleManualSubmit} className="space-y-3 text-left">
+            <div>
+              <label htmlFor="manual-lat" className="block text-xs font-semibold text-gray-600 mb-1.5">
+                Latitude
+              </label>
+              <input
+                id="manual-lat"
+                type="text"
+                inputMode="decimal"
+                value={manualLat}
+                onChange={(e) => setManualLat(e.target.value)}
+                placeholder="23.5200"
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50 transition-all placeholder:text-gray-300 font-mono"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="manual-lng" className="block text-xs font-semibold text-gray-600 mb-1.5">
+                Longitude
+              </label>
+              <input
+                id="manual-lng"
+                type="text"
+                inputMode="decimal"
+                value={manualLng}
+                onChange={(e) => setManualLng(e.target.value)}
+                placeholder="91.1150"
+                className="w-full border border-gray-200 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent bg-gray-50 transition-all placeholder:text-gray-300 font-mono"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={manualLoading || isLoading}
+              className={`w-full font-semibold rounded-xl py-2.5 text-sm transition-all ${
+                manualLoading || isLoading
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-gray-800 text-white hover:bg-gray-900 shadow-sm hover:shadow-md active:scale-[0.98]'
+              }`}
+            >
+              {manualLoading ? 'সেভ হচ্ছে...' : 'ম্যানুয়ালি সেভ করুন'}
+            </button>
+          </form>
 
           <p className="text-xs text-gray-400 mt-4">
             আপনার লোকেশন শুধুমাত্র ফসল বিশ্লেষণের জন্য ব্যবহার করা হবে।

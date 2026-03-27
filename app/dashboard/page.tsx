@@ -14,8 +14,11 @@ import LandDigest               from '../components/LandDigest'
 import FarmRiskCard             from '../components/FarmRiskCard'
 import HeavyMetalRiskCard       from '../components/HeavyMetalRiskCard'
 import DiseaseScanner           from '../components/DiseaseScanner'
+import HeavyMetalMap            from '../components/HeavyMetalMap'
+import DataExport               from '../components/DataExport'
 import WaterAlertBanner         from '../components/WaterAlertBanner'
 import ConsentToggle            from '../components/ConsentToggle'
+import AirExposureCard          from '../components/AirExposureCard'
 import { ImpactMapWrapper }     from '../components/MapWrappers'
 import type { LandPlotOverview } from '../components/OverviewMap'
 import type { Hotspot } from '../components/ImpactMap'
@@ -193,6 +196,55 @@ export default async function DashboardPage({
     ? await getFarmRiskSummaries(user.id)
     : []
   const riskMap = Object.fromEntries(riskSummaries.map(r => [r.land_id, r]))
+
+  // Heavy metal scores for map
+  type HeavyMetalMapPlot = {
+    land_id: string
+    land_name_bn: string
+    lat: number
+    lng: number
+    heavy_metal_score: number | null
+    severity: string | null
+    metal_type: string | null
+  }
+  let hmMapPlots: HeavyMetalMapPlot[] = []
+  if (activeTab === 'risk' && rawPlots.length > 0 && coords) {
+    const landIds = rawPlots.map(p => p.land_id)
+    // Get latest heavy metal score per land from scan_logs
+    const { data: hmScans } = await supabase
+      .from('scan_logs')
+      .select('land_id, heavy_metal_score')
+      .eq('farmer_id', user.id)
+      .in('land_id', landIds)
+      .order('created_at', { ascending: false })
+    // Get heavy metal reports for severity + metal_type
+    const { data: hmReports } = await supabase
+      .from('heavy_metal_reports')
+      .select('land_id, severity, metal_type')
+      .in('land_id', landIds)
+      .order('reported_at', { ascending: false })
+    const hmScoreMap: Record<string, number> = {}
+    for (const s of hmScans ?? []) {
+      if (s.land_id && !(s.land_id in hmScoreMap) && typeof s.heavy_metal_score === 'number') {
+        hmScoreMap[s.land_id] = s.heavy_metal_score
+      }
+    }
+    const hmReportMap: Record<string, { severity: string; metal_type: string }> = {}
+    for (const r of hmReports ?? []) {
+      if (r.land_id && !(r.land_id in hmReportMap)) {
+        hmReportMap[r.land_id] = r
+      }
+    }
+    hmMapPlots = rawPlots.map((p, i) => ({
+      land_id: p.land_id,
+      land_name_bn: p.land_name_bn ?? p.land_name ?? `জমি ${i + 1}`,
+      lat: coords.lat + (i * 0.001), // slight offset per plot for visibility
+      lng: coords.lng + (i * 0.001),
+      heavy_metal_score: hmScoreMap[p.land_id] ?? null,
+      severity: hmReportMap[p.land_id]?.severity ?? null,
+      metal_type: hmReportMap[p.land_id]?.metal_type ?? null,
+    }))
+  }
 
   let pollutionStats: {
     scanCount: number
@@ -537,7 +589,7 @@ export default async function DashboardPage({
               </div>
             </div>
           )}
-          <WeeklySurvey farmerId={user.id} />
+          <WeeklySurvey farmerId={user.id} farmerLat={coords?.lat ?? null} farmerLng={coords?.lng ?? null} />
         </div>
       )}
 
@@ -607,6 +659,10 @@ export default async function DashboardPage({
           )}
 
           <WaterAlertBanner alerts={waterAlerts} farmerId={user.id} />
+
+          {rawPlots.length > 0 && (
+            <AirExposureCard landId={rawPlots[0].land_id} />
+          )}
 
           {coords && (
             <ImpactMapWrapper
@@ -711,11 +767,23 @@ export default async function DashboardPage({
                     initialAdviceBn={summary?.advice_bn ?? null}
                     dominantThreat={summary?.dominant_threat ?? null}
                   />
-                  <HeavyMetalRiskCard landId={plot.land_id} />
+                  <HeavyMetalRiskCard landId={plot.land_id} lat={coords?.lat} lng={coords?.lng} />
                 </div>
               )
             })}
           </div>
+
+          {/* Heavy Metal Risk Map */}
+          {coords && hmMapPlots.length > 0 && (
+            <HeavyMetalMap
+              plots={hmMapPlots}
+              centerLat={coords.lat}
+              centerLng={coords.lng}
+            />
+          )}
+
+          {/* Data Export */}
+          <DataExport hasConsent={farmer?.data_sharing_consent ?? false} />
 
           {/* Data selling promo banner */}
           <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-5 text-white">

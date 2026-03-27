@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/app/utils/supabase/client";
+import { confirmScanResult } from "@/app/actions/confirmScan";
 
 interface Props {
   farmerId: string;
@@ -18,7 +19,15 @@ interface LandPlot {
   last_survey_days?: number | null;
 }
 
+interface LandSuitability {
+  suitable: boolean;
+  score: number;
+  reason_bn: string | null;
+  adaptive_advice: string | null;
+}
+
 interface DiagnosisResult {
+  scan_id?: string;
   final_diagnosis?: string;
   disease_type?: "Biotic" | "Abiotic";
   spray_suppressed?: boolean;
@@ -28,9 +37,9 @@ interface DiagnosisResult {
   primary_cause?: "biotic" | "abiotic" | "heavy_metal";
   secondary_cause?: string | null;
   detection_scores?: {
-    biotic?: { percentage: number; disease_name_bn?: string; subtype?: string };
-    abiotic?: { percentage: number; subtype?: string; spray_suppressed?: boolean };
-    heavy_metal?: { percentage: number; metals?: string[]; severity?: string };
+    biotic?: { percentage: number; disease_name_bn?: string; subtype?: string; disease_id?: string | null };
+    abiotic?: { percentage: number; subtype?: string; spray_suppressed?: boolean; active_signals?: string[] };
+    heavy_metal?: { percentage: number; metals?: string[]; severity?: string; zone_risk?: string };
   };
   compound_stress?: {
     detected: boolean;
@@ -44,6 +53,7 @@ interface DiagnosisResult {
     area_trend_bn?: string | null;
     epidemic_alert_active?: boolean;
   };
+  land_suitability?: LandSuitability;
 }
 
 interface DiagnosisContext {
@@ -51,12 +61,15 @@ interface DiagnosisContext {
   neighbor_sprays?: number;
   rag_cases_used?: number;
   weather?: string;
+  abiotic_score?: string;
+  plume_score?: string;
 }
 
 interface DiagnoseResponse {
   success: boolean;
   blocked?: boolean;
   message?: string;
+  scan_id?: string;
   diagnosis?: DiagnosisResult | string;
   source?: string;
   context?: DiagnosisContext | null;
@@ -67,12 +80,14 @@ interface DiagnoseResponse {
   compound_stress?: DiagnosisResult["compound_stress"];
   secondary_advice_bn?: string | null;
   community?: DiagnosisResult["community"];
+  land_suitability?: LandSuitability;
   overrides_applied?: string[];
   disease_type?: "Biotic" | "Abiotic";
   spray_suppressed?: boolean;
   confidence?: number;
   reasoning_bn?: string;
   remedy_bn?: string;
+  db_saved?: boolean;
 }
 
 export default function DiseaseScanner({ farmerId, plots }: Props) {
@@ -88,9 +103,15 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [blocked, setBlocked] = useState(false);
 
+  // Confirmation state
+  const [confirmStatus, setConfirmStatus] = useState<'idle' | 'confirming' | 'done'>('idle');
+  const [confirmMessage, setConfirmMessage] = useState<string | null>(null);
+  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [rejectFeedback, setRejectFeedback] = useState("");
+  const [scanLogId, setScanLogId] = useState<string | null>(null);
+
   const previewUrlRef = useRef<string | null>(null);
 
-  // Cleanup blob URL on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
       if (previewUrlRef.current) {
@@ -102,7 +123,6 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Revoke the old blob URL before creating a new one
       if (previewUrlRef.current) {
         URL.revokeObjectURL(previewUrlRef.current);
       }
@@ -113,6 +133,8 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
       setResult(null);
       setError(null);
       setBlocked(false);
+      setConfirmStatus('idle');
+      setConfirmMessage(null);
     }
   };
 
@@ -124,12 +146,33 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
       reader.onerror = reject;
     });
 
+  const handleConfirm = async (action: 'verify' | 'reject') => {
+    if (!scanLogId) return;
+    setConfirmStatus('confirming');
+    try {
+      const res = await confirmScanResult(
+        scanLogId,
+        action,
+        action === 'reject' ? rejectFeedback : undefined
+      );
+      setConfirmMessage(res.message);
+      setConfirmStatus('done');
+    } catch {
+      setConfirmMessage('সমস্যা হয়েছে।');
+      setConfirmStatus('done');
+    }
+  };
+
   const handleScan = async () => {
     if (!image || !selectedLandId) return;
     setLoading(true);
     setError(null);
     setResult(null);
     setBlocked(false);
+    setConfirmStatus('idle');
+    setConfirmMessage(null);
+    setShowRejectForm(false);
+    setScanLogId(null);
 
     try {
       navigator.geolocation.getCurrentPosition(
@@ -169,13 +212,33 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
                 typeof data.diagnosis === "object" && data.diagnosis !== null
                   ? (data.diagnosis as DiagnosisResult)
                   : null;
+
+              // Get the scan_id for confirmation
+              const sid = data.scan_id ?? diagnosisObj?.scan_id ?? null;
+
+              // If DB saved, find the scan_log ID
+              if (data.db_saved && sid) {
+                // Look up scan_log by scan_id pattern
+                const { data: scanRow } = await supabase
+                  .from('scan_logs')
+                  .select('id')
+                  .eq('farmer_id', farmerId)
+                  .eq('land_id', selectedLandId)
+                  .order('created_at', { ascending: false })
+                  .limit(1)
+                  .maybeSingle();
+                setScanLogId(scanRow?.id ?? null);
+              }
+
               setResult({
+                scan_id: sid ?? undefined,
                 primary_cause: data.primary_cause ?? diagnosisObj?.primary_cause,
                 secondary_cause: data.secondary_cause ?? diagnosisObj?.secondary_cause ?? null,
                 detection_scores: data.detection_scores ?? diagnosisObj?.detection_scores,
                 compound_stress: data.compound_stress ?? diagnosisObj?.compound_stress ?? null,
                 secondary_advice_bn: data.secondary_advice_bn ?? diagnosisObj?.secondary_advice_bn ?? null,
                 community: data.community ?? diagnosisObj?.community,
+                land_suitability: data.land_suitability ?? diagnosisObj?.land_suitability,
                 overrides_applied: data.overrides_applied ?? diagnosisObj?.overrides_applied ?? [],
                 final_diagnosis:
                   (typeof data.diagnosis === "string" ? data.diagnosis : diagnosisObj?.final_diagnosis) ??
@@ -213,6 +276,14 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
 
   const selectedPlot = plots.find(p => p.land_id === selectedLandId);
 
+  // Severity label helper
+  const severityBn = (s?: string) => {
+    if (s === 'critical') return 'গুরুতর';
+    if (s === 'high') return 'উচ্চ';
+    if (s === 'moderate') return 'মাঝারি';
+    return 'নিম্ন';
+  };
+
   return (
     <div className="p-4 border rounded-xl shadow-sm bg-white max-w-md mx-auto space-y-4">
       <h2 className="text-xl font-bold text-green-700">🌿 স্মার্ট স্ক্যানার</h2>
@@ -224,7 +295,7 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
         </label>
         <select
           value={selectedLandId}
-          onChange={(e) => { setSelectedLandId(e.target.value); setResult(null); setError(null); setBlocked(false); }}
+          onChange={(e) => { setSelectedLandId(e.target.value); setResult(null); setError(null); setBlocked(false); setConfirmStatus('idle'); }}
           className="w-full p-2 border border-gray-300 rounded-md focus:ring-green-500 focus:border-green-500 text-sm"
         >
           <option value="">-- জমি নির্বাচন করুন --</option>
@@ -294,13 +365,56 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
         </div>
       )}
 
-      {/* Result card */}
+      {/* ═══════════════════════════════════════════════════════════
+          RESULT CARD
+      ═══════════════════════════════════════════════════════════ */}
       {result && (
         <div className="p-4 bg-green-50 rounded-xl border border-green-200 space-y-3">
 
-          {/* Saved image thumbnail from Supabase Storage */}
+          {/* Saved image thumbnail */}
           {savedImageUrl && (
             <img src={savedImageUrl} alt="Scanned crop" className="rounded-lg w-full max-h-36 object-cover mb-1" />
+          )}
+
+          {/* Weather context badge */}
+          {resultContext?.weather && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+              <span className="text-sm">🌤️</span>
+              <span className="text-xs text-blue-700 font-medium">{resultContext.weather}</span>
+              <span className="text-xs text-blue-400 ml-auto">✅ আবহাওয়া ডেটা সক্রিয়</span>
+            </div>
+          )}
+
+          {/* ─── Crop Suitability Card ─────────────────── */}
+          {result.land_suitability && (
+            <div className={`p-3 rounded-lg border ${
+              result.land_suitability.suitable
+                ? 'bg-green-50 border-green-200'
+                : 'bg-red-50 border-red-200'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-bold">
+                  {result.land_suitability.suitable ? '✅' : '❌'} ফসল উপযুক্ততা
+                </span>
+                <span className={`text-xs font-black px-2 py-0.5 rounded-full ${
+                  result.land_suitability.suitable
+                    ? 'bg-green-100 text-green-800'
+                    : 'bg-red-100 text-red-800'
+                }`}>
+                  {Math.round(result.land_suitability.score * 100)}%
+                </span>
+              </div>
+              {result.land_suitability.reason_bn && (
+                <p className="text-xs text-red-700 mt-1 font-medium">
+                  ⚠️ {result.land_suitability.reason_bn}
+                </p>
+              )}
+              {result.land_suitability.adaptive_advice && (
+                <p className="text-xs text-gray-500 mt-1 italic">
+                  💡 {result.land_suitability.adaptive_advice}
+                </p>
+              )}
+            </div>
           )}
 
           {/* Header */}
@@ -309,63 +423,137 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
             <span className="text-xs text-gray-400 whitespace-nowrap">{resultSource}</span>
           </div>
 
-          {/* Three Detection Scores */}
+          {/* ─── Three Detection Scores (Detailed) ────── */}
           {result.detection_scores && (
-            <div className="grid grid-cols-3 gap-2 mt-3">
-              <div className={`p-2 rounded-lg text-center border ${
-                (result.detection_scores.biotic?.percentage ?? 0) >= 35
-                  ? "bg-blue-50 border-blue-200"
-                  : "bg-gray-50 border-gray-200"
-              }`}>
-                <div className="text-xs text-gray-500 font-bold">🦠 জৈবিক</div>
-                <div className={`text-xl font-black ${
+            <div className="space-y-2">
+              {/* Score overview pills */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className={`p-2 rounded-lg text-center border ${
                   (result.detection_scores.biotic?.percentage ?? 0) >= 35
-                    ? "text-blue-700" : "text-gray-400"
+                    ? "bg-blue-50 border-blue-200"
+                    : "bg-gray-50 border-gray-200"
                 }`}>
-                  {result.detection_scores.biotic?.percentage ?? 0}%
-                </div>
-                {result.detection_scores.biotic?.disease_name_bn && (
-                  <div className="text-xs text-gray-600 truncate">
-                    {result.detection_scores.biotic.disease_name_bn}
+                  <div className="text-xs text-gray-500 font-bold">🦠 জৈবিক</div>
+                  <div className={`text-xl font-black ${
+                    (result.detection_scores.biotic?.percentage ?? 0) >= 35
+                      ? "text-blue-700" : "text-gray-400"
+                  }`}>
+                    {result.detection_scores.biotic?.percentage ?? 0}%
                   </div>
-                )}
-              </div>
+                </div>
 
-              <div className={`p-2 rounded-lg text-center border ${
-                (result.detection_scores.abiotic?.percentage ?? 0) >= 35
-                  ? "bg-orange-50 border-orange-200"
-                  : "bg-gray-50 border-gray-200"
-              }`}>
-                <div className="text-xs text-gray-500 font-bold">⚗️ দূষণ</div>
-                <div className={`text-xl font-black ${
+                <div className={`p-2 rounded-lg text-center border ${
                   (result.detection_scores.abiotic?.percentage ?? 0) >= 35
-                    ? "text-orange-700" : "text-gray-400"
+                    ? "bg-orange-50 border-orange-200"
+                    : "bg-gray-50 border-gray-200"
                 }`}>
-                  {result.detection_scores.abiotic?.percentage ?? 0}%
+                  <div className="text-xs text-gray-500 font-bold">⚗️ দূষণ</div>
+                  <div className={`text-xl font-black ${
+                    (result.detection_scores.abiotic?.percentage ?? 0) >= 35
+                      ? "text-orange-700" : "text-gray-400"
+                  }`}>
+                    {result.detection_scores.abiotic?.percentage ?? 0}%
+                  </div>
                 </div>
-                {result.detection_scores.abiotic?.spray_suppressed && (
-                  <div className="text-xs text-red-600 font-bold">স্প্রে নিষেধ</div>
-                )}
+
+                <div className={`p-2 rounded-lg text-center border ${
+                  (result.detection_scores.heavy_metal?.percentage ?? 0) > 0
+                    ? "bg-yellow-50 border-yellow-200"
+                    : "bg-gray-50 border-gray-200"
+                }`}>
+                  <div className="text-xs text-gray-500 font-bold">⚠️ ধাতু</div>
+                  <div className={`text-xl font-black ${
+                    (result.detection_scores.heavy_metal?.percentage ?? 0) > 0
+                      ? "text-yellow-700" : "text-gray-400"
+                  }`}>
+                    {result.detection_scores.heavy_metal?.percentage ?? 0}%
+                  </div>
+                </div>
               </div>
 
-              <div className={`p-2 rounded-lg text-center border ${
-                (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
-                  ? "bg-yellow-50 border-yellow-200"
-                  : "bg-gray-50 border-gray-200"
-              }`}>
-                <div className="text-xs text-gray-500 font-bold">⚠️ ধাতু</div>
-                <div className={`text-xl font-black ${
-                  (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
-                    ? "text-yellow-700" : "text-gray-400"
-                }`}>
-                  {result.detection_scores.heavy_metal?.percentage ?? 0}%
+              {/* ── Detailed: Biotic ──────────────────── */}
+              {(result.detection_scores.biotic?.percentage ?? 0) > 0 && (
+                <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-3 space-y-1">
+                  <h4 className="text-xs font-bold text-blue-800 flex items-center gap-1">
+                    🦠 জৈবিক বিশ্লেষণ (Biotic)
+                  </h4>
+                  {result.detection_scores.biotic?.disease_name_bn && (
+                    <p className="text-sm font-semibold text-gray-800">
+                      রোগ: {result.detection_scores.biotic.disease_name_bn}
+                    </p>
+                  )}
+                  {result.detection_scores.biotic?.subtype && (
+                    <p className="text-xs text-gray-600">
+                      ধরন: <span className="font-medium">{result.detection_scores.biotic.subtype}</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">
+                    স্কোর: {result.detection_scores.biotic?.percentage ?? 0}% · 
+                    কনফিডেন্স: {Math.round((result.confidence ?? 0) * 100)}%
+                  </p>
                 </div>
-                {result.detection_scores.heavy_metal?.metals?.[0] && (
-                  <div className="text-xs text-gray-600">
-                    {result.detection_scores.heavy_metal.metals[0]}
-                  </div>
-                )}
-              </div>
+              )}
+
+              {/* ── Detailed: Abiotic ─────────────────── */}
+              {(result.detection_scores.abiotic?.percentage ?? 0) > 0 && (
+                <div className="bg-orange-50/50 border border-orange-100 rounded-lg p-3 space-y-1">
+                  <h4 className="text-xs font-bold text-orange-800 flex items-center gap-1">
+                    ⚗️ দূষণ বিশ্লেষণ (Abiotic)
+                  </h4>
+                  {result.detection_scores.abiotic?.subtype && (
+                    <p className="text-xs text-gray-600">
+                      ধরন: <span className="font-medium">{result.detection_scores.abiotic.subtype.replace('Abiotic_', '')}</span>
+                    </p>
+                  )}
+                  {result.detection_scores.abiotic?.active_signals && result.detection_scores.abiotic.active_signals.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {result.detection_scores.abiotic.active_signals.map((sig, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full">
+                          {sig}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {result.detection_scores.abiotic?.spray_suppressed && (
+                    <p className="text-xs text-red-600 font-bold mt-1">🛑 স্প্রে নিষেধ — দূষণজনিত ক্ষতি</p>
+                  )}
+                  <p className="text-xs text-gray-500">স্কোর: {result.detection_scores.abiotic?.percentage ?? 0}%</p>
+                </div>
+              )}
+
+              {/* ── Detailed: Heavy Metal ─────────────── */}
+              {(result.detection_scores.heavy_metal?.percentage ?? 0) > 0 && (
+                <div className="bg-yellow-50/50 border border-yellow-100 rounded-lg p-3 space-y-1">
+                  <h4 className="text-xs font-bold text-yellow-800 flex items-center gap-1">
+                    ⚠️ ভারি ধাতু বিশ্লেষণ (Heavy Metal)
+                  </h4>
+                  {result.detection_scores.heavy_metal?.severity && (
+                    <p className="text-xs text-gray-600">
+                      তীব্রতা: <span className={`font-bold ${
+                        result.detection_scores.heavy_metal.severity === 'critical' ? 'text-red-700' :
+                        result.detection_scores.heavy_metal.severity === 'high' ? 'text-red-600' :
+                        result.detection_scores.heavy_metal.severity === 'moderate' ? 'text-orange-600' :
+                        'text-green-600'
+                      }`}>{severityBn(result.detection_scores.heavy_metal.severity)}</span>
+                    </p>
+                  )}
+                  {result.detection_scores.heavy_metal?.metals && result.detection_scores.heavy_metal.metals.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {result.detection_scores.heavy_metal.metals.map((m, i) => (
+                        <span key={i} className="text-xs px-2 py-0.5 bg-yellow-100 text-yellow-800 rounded-full font-medium">
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {result.detection_scores.heavy_metal?.zone_risk && result.detection_scores.heavy_metal.zone_risk !== 'Low' && (
+                    <p className="text-xs text-gray-500">
+                      জোন ঝুঁকি: <span className="font-medium">{result.detection_scores.heavy_metal.zone_risk}</span>
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500">স্কোর: {result.detection_scores.heavy_metal?.percentage ?? 0}%</p>
+                </div>
+              )}
             </div>
           )}
 
@@ -396,7 +584,7 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
             </div>
           )}
 
-          {/* Secondary advice (compound stress) */}
+          {/* Secondary advice */}
           {result.secondary_advice_bn && (
             <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
               <p className="text-xs font-bold text-gray-700 mb-1">অতিরিক্ত পরামর্শ:</p>
@@ -445,20 +633,78 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
           {/* Reasoning */}
           <div>
             <p className="text-sm font-semibold text-gray-700">যুক্তি:</p>
-            {/* FIX: was result.reasoning — route returns reasoning_bn */}
             <p className="text-sm text-gray-600">{result.reasoning_bn}</p>
           </div>
 
           {/* Remedy */}
           <div className="bg-white rounded-lg p-3 border border-green-100">
             <p className="text-sm font-semibold text-gray-700 mb-1">করণীয়:</p>
-            {/* FIX: was result.remedy — route returns remedy_bn */}
             <p className="text-sm text-gray-600">{result.remedy_bn}</p>
           </div>
 
-          {/* Weather context */}
-          {resultContext?.weather && (
-            <p className="text-xs text-gray-400">🌤 {resultContext.weather}</p>
+          {/* ─── AI Result Confirmation Form ──────────────── */}
+          {scanLogId && confirmStatus !== 'done' && (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+              <h4 className="text-sm font-bold text-gray-800">📋 ফলাফল কি সঠিক?</h4>
+              <p className="text-xs text-gray-500">
+                আপনার মতামত AI-কে আরও নির্ভুল করবে এবং আপনার ব্যাজ বাড়াবে।
+              </p>
+
+              {!showRejectForm ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleConfirm('verify')}
+                    disabled={confirmStatus === 'confirming'}
+                    className="flex-1 py-2 px-3 rounded-lg bg-green-600 text-white text-sm font-bold hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {confirmStatus === 'confirming' ? '...' : '✅ হ্যাঁ, সঠিক'}
+                  </button>
+                  <button
+                    onClick={() => setShowRejectForm(true)}
+                    disabled={confirmStatus === 'confirming'}
+                    className="flex-1 py-2 px-3 rounded-lg bg-red-100 text-red-700 text-sm font-bold hover:bg-red-200 disabled:opacity-50 transition-colors"
+                  >
+                    ❌ ভুল
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <textarea
+                    value={rejectFeedback}
+                    onChange={(e) => setRejectFeedback(e.target.value)}
+                    placeholder="আসল সমস্যা কী? (ঐচ্ছিক)"
+                    className="w-full p-2 border border-gray-300 rounded-md text-sm focus:ring-red-500 focus:border-red-500"
+                    rows={2}
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleConfirm('reject')}
+                      disabled={confirmStatus === 'confirming'}
+                      className="flex-1 py-2 px-3 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 disabled:opacity-50 transition-colors"
+                    >
+                      {confirmStatus === 'confirming' ? '...' : 'ভুল রিপোর্ট জমা দিন'}
+                    </button>
+                    <button
+                      onClick={() => setShowRejectForm(false)}
+                      className="py-2 px-3 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200"
+                    >
+                      বাতিল
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Confirmation result message */}
+          {confirmStatus === 'done' && confirmMessage && (
+            <div className={`p-3 rounded-lg text-sm font-medium ${
+              confirmMessage.startsWith('✅') ? 'bg-green-100 text-green-800 border border-green-200' :
+              confirmMessage.startsWith('❌') ? 'bg-red-100 text-red-800 border border-red-200' :
+              'bg-gray-100 text-gray-800 border border-gray-200'
+            }`}>
+              {confirmMessage}
+            </div>
           )}
         </div>
       )}

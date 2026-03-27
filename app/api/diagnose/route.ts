@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import { triggerHeavyMetalDetection } from "@/app/actions/heavyMetalActions";
+import { fetchISRICSoilData } from "@/lib/heavyMetalEngine";
 
 // ── Supabase service role client ──────────────────────────────────────────────
 const supabase = createClient(
@@ -49,6 +49,112 @@ interface VisionResult {
   [k: string]: unknown;
 }
 
+interface VisionBioticResult extends VisionResult {
+  biotic_score?: number;
+  disease_type?: "Biotic" | "None";
+  stress_subtype?: StressType | "None";
+  confidence?: number;
+  disease_name_en?: string | null;
+  disease_name_bn?: string | null;
+  weather_supports_disease?: boolean;
+  rag_match_count?: number;
+  remedy_bn?: string | null;
+  suggested_disease_id?: string | null;
+  suggested_pollutant_id?: string | null;
+  evidence_chain?: unknown[];
+  counter_evidence?: string[];
+}
+
+interface ArbiterResult {
+  primary_diagnosis: "biotic" | "abiotic" | "heavy_metal" | "unknown";
+  secondary_diagnosis: "biotic" | "abiotic" | "heavy_metal" | null;
+  compound_stress: boolean;
+  spray_suppressed: boolean;
+  final_confidence: number;
+  reasoning_chain: string[];
+  contradictions_resolved: Array<{ contradiction: string; resolution: string; action: string }>;
+  evidence_summary: {
+    supporting_biotic: string[];
+    supporting_abiotic: string[];
+    supporting_metal: string[];
+  };
+}
+
+type DiagnosisCause = "biotic" | "abiotic" | "heavy_metal" | "unknown";
+
+interface ExpertTrace {
+  score: number;
+  evidence: unknown[];
+}
+
+interface ReasoningPayload {
+  expert_a: ExpertTrace;
+  expert_b: ExpertTrace;
+  expert_c: ExpertTrace;
+  arbiter: ArbiterResult;
+}
+
+interface VerdictGates {
+  crop_valid: boolean | undefined;
+  crop_detected: string;
+  growth_stage: string;
+  land_suitable: boolean;
+  land_suitability_score: number;
+  land_warnings: string[];
+}
+
+interface VerdictDetectionScores {
+  biotic: {
+    percentage: number;
+    disease_name_bn: string | null;
+    subtype: string | null;
+    disease_id: string | null;
+  };
+  abiotic: {
+    percentage: number;
+    subtype: unknown;
+    spray_suppressed: boolean;
+    active_signals: unknown;
+  };
+  heavy_metal: {
+    percentage: number;
+    metals: unknown;
+    severity: unknown;
+    zone_risk: unknown;
+  };
+}
+
+interface VerdictCommunity {
+  nearby_verified_scans: number;
+  area_trend_bn: string | null;
+  epidemic_alert_active: boolean;
+  epidemic_alert_message_bn: string | null;
+}
+
+interface VerdictLandSuitability {
+  suitable: boolean;
+  score: number;
+  reason_bn: string | null;
+  adaptive_advice: unknown;
+}
+
+interface HeavyMetalRiskStrategy {
+  risk_level: "low" | "moderate" | "high" | "critical";
+  metals: string[];
+  affected_crop: string | null;
+  bioaccumulation_risk: "low" | "moderate" | "high";
+  immediate_actions_bn: string;
+  remediation_bn: string;
+  timeline_bn: string;
+  authority_contact: {
+    report_to_dae: boolean;
+    report_to_doe: boolean;
+    nearest_lab: string;
+    urgency_level: "routine" | "priority" | "emergency";
+  };
+  confidence: number;
+}
+
 interface NeighborSprayLine {
   chemical?: string;
   chemical_name?: string;
@@ -76,7 +182,17 @@ interface FinalVerdict {
   suggested_disease_id?: string | null;
   suggested_pollutant_id?: string | null;
   overrides_applied?: string[];
-  [k: string]: unknown;
+  gates?: VerdictGates;
+  detection_scores?: VerdictDetectionScores;
+  primary_cause?: DiagnosisCause;
+  secondary_cause?: DiagnosisCause | null;
+  compound_stress?: AnyRecord | null;
+  community?: VerdictCommunity;
+  land_suitability?: VerdictLandSuitability;
+  secondary_advice_bn?: string | null;
+  source?: string;
+  model_used?: string;
+  reasoning?: ReasoningPayload;
 }
 
 interface WeatherCache {
@@ -110,6 +226,14 @@ function md5(s: string): string {
   return createHash("md5").update(s).digest("hex");
 }
 
+function classifyWeatherBucket(temp: number, humidity: number, wetDays: number): string {
+  if (temp >= 28 && humidity >= 80) return "hot_humid";
+  if (temp < 25 && humidity >= 75) return "cool_wet";
+  if (humidity < 55) return "dry";
+  void wetDays; // kept for signature parity with spec (used by callers if needed)
+  return "moderate";
+}
+
 function detectMimeType(base64: string): string {
   const header = base64.slice(0, 12);
   if (header.startsWith("/9j/")) return "image/jpeg";
@@ -130,16 +254,58 @@ function abioticBucket(score: number): string {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// DYNAMIC CONFIDENCE CALIBRATION — detect overlapping scores
+// When biotic and abiotic scores are dangerously close, reduce confidence
+// and warn farmer to seek expert verification
+// ══════════════════════════════════════════════════════════════════════════════
+function applyOverlapCalibration(
+  verdict: FinalVerdict,
+  bioticScore: number,
+  abioticScore: number,
+  heavyMetalScore: number,
+  scanId: string
+): FinalVerdict {
+  const OVERLAP_THRESHOLD = 0.15; // If scores are within 0.15 of each other
+
+  // Case 1: Biotic vs Abiotic overlap
+  if (Math.abs(bioticScore - abioticScore) < OVERLAP_THRESHOLD &&
+      bioticScore >= 0.30 && abioticScore >= 0.30) {
+    const oldConf = verdict.confidence ?? 0.70;
+    verdict.confidence = Math.min(oldConf, 0.48);
+    verdict.reasoning_bn = `${verdict.reasoning_bn ?? ""}\n\n⚠️ সতর্কতা: রোগ ও দূষণের লক্ষণ একরকম দেখাচ্ছে। নিশ্চিত হওয়ার আগে বিশেষজ্ঞের পরামর্শ নিন।`;
+
+    log(scanId, "⚠️", `OVERLAP DETECTED: biotic=${bioticScore.toFixed(2)} vs abiotic=${abioticScore.toFixed(2)} → confidence capped at 0.48`);
+  }
+
+  // Case 2: Biotic disease with high heavy metal (compound stress ambiguity)
+  if (verdict.disease_type === "Biotic" &&
+      heavyMetalScore >= 0.40 &&
+      bioticScore < 0.70) {
+    const oldConf = verdict.confidence ?? 0.70;
+    verdict.confidence = Math.min(oldConf, 0.55);
+    verdict.reasoning_bn = `${verdict.reasoning_bn ?? ""}\n\n⚠️ নোট: মাটিতে ভারী ধাতু পাওয়া গেছে যা গাছের রোগ প্রতিরোধ ক্ষমতা কমাতে পারে। ছত্রাকনাশক সম্পূর্ণ কার্যকর নাও হতে পারে।`;
+
+    log(scanId, "⚠️", `METAL INTERFERENCE: biotic=${bioticScore.toFixed(2)}, metal=${heavyMetalScore.toFixed(2)} → confidence capped at 0.55`);
+  }
+
+  return verdict;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // HARD OVERRIDES — enforced in TypeScript, NOT in LLM prompt
 // ══════════════════════════════════════════════════════════════════════════════
 function enforceHardOverrides(
   verdict: FinalVerdict,
   abioticScore: number,
-  heavyMetalSeverity: string | null | undefined,
+  liveHeavyMetalScore: number,        // ← LIVE score, not stale DB
+  liveHeavyMetalSeverity: string,     // ← LIVE severity
   plumeScore: number
 ): FinalVerdict {
   const overrides: string[] = [];
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // RULE 1: Critical abiotic pollution (>= 0.60) ALWAYS overrides biotic
+  // ══════════════════════════════════════════════════════════════════════════
   if (abioticScore >= 0.60) {
     if (verdict.disease_type !== "Abiotic") {
       verdict.disease_type = "Abiotic";
@@ -150,20 +316,37 @@ function enforceHardOverrides(
     overrides.push("SPRAY_SUPPRESSED_abiotic>=0.60");
   }
 
-  if (heavyMetalSeverity === "critical" || heavyMetalSeverity === "high") {
+  // ══════════════════════════════════════════════════════════════════════════
+  // RULE 2: LIVE Heavy Metal Threat (THE CRITICAL FIX)
+  // Use LIVE computed score, not stale DB report from start of execution
+  // ══════════════════════════════════════════════════════════════════════════
+  if (liveHeavyMetalSeverity === "critical" || liveHeavyMetalSeverity === "high") {
     verdict.spray_suppressed = true;
-    overrides.push(`SPRAY_SUPPRESSED_metal:${heavyMetalSeverity}`);
+    overrides.push(`SPRAY_SUPPRESSED_LIVE_METAL:${liveHeavyMetalSeverity}(${liveHeavyMetalScore.toFixed(2)})`);
+
+    // If heavy metal is critical AND biotic was suggested, VETO it
+    if (liveHeavyMetalSeverity === "critical" && verdict.disease_type === "Biotic") {
+      verdict.disease_type = "Abiotic";
+      verdict.stress_subtype = "Abiotic_Pollution";
+      overrides.push("CRITICAL_METAL_VETO_biotic→abiotic");
+    }
   }
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // RULE 3: Fix LLM contradictions (spray suppressed but still marked Biotic)
+  // ══════════════════════════════════════════════════════════════════════════
   if (verdict.spray_suppressed === true && verdict.disease_type === "Biotic") {
     verdict.disease_type = "Abiotic";
     verdict.stress_subtype = "Abiotic_Pollution";
     overrides.push("LLM_CONTRADICTION_FIXED");
   }
 
-  if (plumeScore >= 0.35 && verdict.disease_type === "Biotic") {
+  // ══════════════════════════════════════════════════════════════════════════
+  // RULE 4: Significant plume exposure always suppresses spray
+  // ══════════════════════════════════════════════════════════════════════════
+  if (plumeScore >= 0.35) {
     verdict.spray_suppressed = true;
-    overrides.push(`PLUME_SUPPRESSED_score:${plumeScore.toFixed(2)}`);
+    overrides.push(`SPRAY_SUPPRESSED_plume>=0.35:${plumeScore.toFixed(2)}`);
   }
 
   verdict.overrides_applied = overrides;
@@ -275,6 +458,144 @@ function scoreHeavyMetal(
   };
 }
 
+function runReasoningArbiter(input: {
+  bioticScore: number;
+  abioticScore: number;
+  heavyMetalScore: number;
+  bioticConfidence: number;
+  community: AnyRecord;
+  overlapThreshold?: number;
+  ragMatchCount?: number;
+  evidenceCount?: number;
+  heavyMetalSeverity: string;
+}): ArbiterResult {
+  const steps: string[] = [];
+  const contradictions: Array<{ contradiction: string; resolution: string; action: string }> = [];
+  const overlapThreshold = input.overlapThreshold ?? 0.15;
+  let spraySuppressed = false;
+  let primary: ArbiterResult["primary_diagnosis"] = "unknown";
+  let secondary: ArbiterResult["secondary_diagnosis"] = null;
+
+  if (input.abioticScore >= 0.60) {
+    primary = "abiotic";
+    steps.push("Rule: abiotic>=0.60 override");
+  }
+  if (input.heavyMetalSeverity === "critical") {
+    spraySuppressed = true;
+    if (primary === "unknown") primary = "heavy_metal";
+    steps.push("Rule: critical metal => spray suppressed");
+  }
+
+  const ranked = [
+    { k: "biotic" as const, v: input.bioticScore },
+    { k: "abiotic" as const, v: input.abioticScore },
+    { k: "heavy_metal" as const, v: input.heavyMetalScore },
+  ].sort((a, b) => b.v - a.v);
+  if (primary === "unknown") primary = ranked[0].v >= THRESHOLDS.PRIMARY ? ranked[0].k : "unknown";
+  secondary = ranked[1].v >= THRESHOLDS.SECONDARY ? ranked[1].k : null;
+  steps.push(`Ranked: ${ranked.map((r) => `${r.k}:${r.v.toFixed(2)}`).join(", ")}`);
+
+  let compound = false;
+  if (primary === "biotic" && input.heavyMetalScore >= 0.40) {
+    compound = true;
+    spraySuppressed = true;
+    contradictions.push({
+      contradiction: "Biotic primary with elevated heavy metal",
+      resolution: "Mark as compound stress",
+      action: "Suppress spray and include metal strategy",
+    });
+    steps.push("Compound stress detected (biotic + heavy metal)");
+  }
+
+  const closeBioticAbiotic =
+    Math.abs(input.bioticScore - input.abioticScore) < overlapThreshold &&
+    input.bioticScore >= 0.30 &&
+    input.abioticScore >= 0.30;
+  let conf = primary === "biotic" ? input.bioticConfidence : Math.max(input.abioticScore, input.heavyMetalScore);
+  if (closeBioticAbiotic) {
+    conf = Math.min(conf, 0.48);
+    steps.push("Overlap cap applied (biotic vs abiotic close)");
+  }
+  if ((input.ragMatchCount ?? 0) >= 2) conf = Math.min(0.95, conf + 0.08);
+  if ((input.evidenceCount ?? 0) >= 3) conf = Math.min(0.95, conf + 0.05);
+
+  const bioticRatio =
+    typeof input.community.biotic_ratio === "number" ? input.community.biotic_ratio :
+    (typeof input.community.biotic_community_ratio === "number" ? input.community.biotic_community_ratio : 0);
+  const abioticRatio =
+    typeof input.community.abiotic_ratio === "number" ? input.community.abiotic_ratio :
+    (typeof input.community.abiotic_community_ratio === "number" ? input.community.abiotic_community_ratio : 0);
+  if (primary === "biotic" && abioticRatio > 0.60) {
+    conf *= 0.85;
+    steps.push("Community misalignment penalty");
+  }
+  if (primary === "biotic" && bioticRatio > 0.60) {
+    conf = Math.min(0.95, conf + 0.10);
+    steps.push("Community alignment bonus");
+  }
+
+  return {
+    primary_diagnosis: primary,
+    secondary_diagnosis: secondary,
+    compound_stress: compound,
+    spray_suppressed: spraySuppressed,
+    final_confidence: Math.max(0, Math.min(0.95, conf)),
+    reasoning_chain: steps,
+    contradictions_resolved: contradictions,
+    evidence_summary: {
+      supporting_biotic: input.bioticScore > 0.2 ? ["Visual/biotic evidence present"] : [],
+      supporting_abiotic: input.abioticScore > 0.2 ? ["Pollution/environmental signals present"] : [],
+      supporting_metal: input.heavyMetalScore > 0.2 ? ["Heavy metal exposure signals present"] : [],
+    },
+  };
+}
+
+async function fetchISRICSnapshot(lat: number, lng: number): Promise<{ ph_h2o: number | null; source: string }> {
+  try {
+    const timeout = new Promise<{ ph_h2o: number | null; source: string }>((resolve) => {
+      setTimeout(() => resolve({ ph_h2o: null, source: "fallback_timeout" }), 800);
+    });
+    const result = fetchISRICSoilData(lat, lng).then((d) => ({
+      ph_h2o: d.ph_h2o,
+      source: d.data_source,
+    }));
+    return await Promise.race([result, timeout]);
+  } catch {
+    return { ph_h2o: null, source: "fallback_error" };
+  }
+}
+
+function buildHeavyMetalRiskStrategy(
+  heavyMetalResult: AnyRecord,
+  cropId: string | null,
+  isricPh: number | null
+): HeavyMetalRiskStrategy {
+  const score = Number(heavyMetalResult.heavy_metal_score ?? 0);
+  const risk_level: HeavyMetalRiskStrategy["risk_level"] =
+    score >= 0.60 ? "critical" : score >= 0.40 ? "high" : score >= 0.20 ? "moderate" : "low";
+  const metals = (Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : []).map((m) => String(m));
+  const phAdvice = isricPh !== null && isricPh < 5.5 ? "মাটি অম্লীয় — চুন প্রয়োগ করুন।" : "মাটির pH যাচাই করে সমন্বয় করুন।";
+  const immediate = risk_level === "critical"
+    ? "দূষিত উৎস থেকে সেচ বন্ধ করুন এবং খাদ্য ফসল তোলা/বিক্রি সাময়িক বন্ধ রাখুন।"
+    : "দূষণের উৎস থেকে সেচ কমান এবং ফসলে বিষাক্ততার লক্ষণ পর্যবেক্ষণ করুন।";
+  return {
+    risk_level,
+    metals,
+    affected_crop: cropId,
+    bioaccumulation_risk: risk_level === "critical" || risk_level === "high" ? "high" : risk_level === "moderate" ? "moderate" : "low",
+    immediate_actions_bn: immediate,
+    remediation_bn: `${phAdvice} জৈব পদার্থ (কম্পোস্ট) দিন এবং নিম্ন-শোষণশীল ফসলে রোটেশন করুন।`,
+    timeline_bn: "আজ: দূষণ উৎস বন্ধ। এই মৌসুম: মাটি পরীক্ষা। আগামী ২-৩ মৌসুম: ফাইটোরেমেডিয়েশন + নিরাপদ ফসল পরিকল্পনা।",
+    authority_contact: {
+      report_to_dae: risk_level === "critical" || risk_level === "high",
+      report_to_doe: risk_level === "critical",
+      nearest_lab: "BARI Soil Testing Lab",
+      urgency_level: risk_level === "critical" ? "emergency" : risk_level === "high" ? "priority" : "routine",
+    },
+    confidence: Math.max(0, Math.min(1, score)),
+  };
+}
+
 async function getCommunitySignal(
   lat: number,
   lng: number,
@@ -305,6 +626,9 @@ async function getCommunitySignal(
       biotic_community_ratio: 0,
       abiotic_community_ratio: 0,
       heavy_metal_community_ratio: 0,
+      biotic_ratio: 0,
+      abiotic_ratio: 0,
+      metal_ratio: 0,
       total_nearby_scans: 0,
       epidemic_alert_active: !!(activeAlertsRes.data?.length),
       epidemic_alert_message_bn: activeAlertsRes.data?.[0]?.alert_message_bn ?? null,
@@ -327,6 +651,9 @@ async function getCommunitySignal(
     biotic_community_ratio: bioticCount / total,
     abiotic_community_ratio: abioticCount / total,
     heavy_metal_community_ratio: metalCount / total,
+    biotic_ratio: bioticCount / total,
+    abiotic_ratio: abioticCount / total,
+    metal_ratio: metalCount / total,
     total_nearby_scans: total,
     epidemic_alert_active: !!(activeAlertsRes.data?.length),
     epidemic_alert_message_bn: activeAlertsRes.data?.[0]?.alert_message_bn ?? null,
@@ -341,9 +668,15 @@ function applyCommuntiyWeighting(
 ): { biotic: number; abiotic: number; heavy_metal: number } {
   const w = typeof community.community_weight === "number" ? community.community_weight : 0;
   if (w === 0) return rawScores;
-  const b = typeof community.biotic_community_ratio === "number" ? community.biotic_community_ratio : 0;
-  const a = typeof community.abiotic_community_ratio === "number" ? community.abiotic_community_ratio : 0;
-  const h = typeof community.heavy_metal_community_ratio === "number" ? community.heavy_metal_community_ratio : 0;
+  const b = typeof community.biotic_community_ratio === "number"
+    ? community.biotic_community_ratio
+    : (typeof community.biotic_ratio === "number" ? community.biotic_ratio : 0);
+  const a = typeof community.abiotic_community_ratio === "number"
+    ? community.abiotic_community_ratio
+    : (typeof community.abiotic_ratio === "number" ? community.abiotic_ratio : 0);
+  const h = typeof community.heavy_metal_community_ratio === "number"
+    ? community.heavy_metal_community_ratio
+    : (typeof community.metal_ratio === "number" ? community.metal_ratio : 0);
   return {
     biotic: Math.min(1.0, rawScores.biotic * (1 - w) + b * w),
     abiotic: Math.min(1.0, rawScores.abiotic * (1 - w) + a * w),
@@ -680,6 +1013,85 @@ Return ONLY valid JSON (no markdown):
     { inlineData: { mimeType: detectMimeType(imageBase64), data: imageBase64 } },
   ]);
   return { ...(extractJSON(text) as VisionResult), _tokens_used: tokensUsed };
+}
+// Kept for backward compatibility in case other modules still import this symbol.
+void runVision;
+
+async function runVisionAndBiotic(
+  imageBase64: string,
+  context: {
+    scanContext: string;
+    weather: string;
+    humidity: number;
+    consecutiveWetDays: number;
+    expectedCrop: string | null;
+    zoneId: string;
+    zoneClimate: string;
+    abioticScore: number;
+    neighborSprays: NeighborSprayLine[];
+    ragCases: RagCase[];
+  }
+): Promise<VisionBioticResult> {
+  const ragSection =
+    context.ragCases.length > 0
+      ? context.ragCases
+          .map((r) => `- ${r.disease_id ?? "Unknown"} | trust:${r.trust_weight ?? 0} | ${r.diagnosis_summary ?? ""}`)
+          .join("\n")
+      : "- no verified nearby cases";
+  const spraySection =
+    context.neighborSprays.length > 0
+      ? context.neighborSprays
+          .map((s) => `- ${s.chemical ?? "Unknown"} (${s.chemical_name ?? ""}) @ ${s.distance_m ?? 0}m`)
+          .join("\n")
+      : "- none";
+  const prompt = `You are AgroSentinel's agricultural vision + biotic AI for Bangladesh.
+Return ONLY valid JSON.
+
+FARM CONTEXT:
+survey_context: ${context.scanContext || "No survey context"}
+weather: ${context.weather}
+humidity: ${context.humidity}
+consecutive_wet_days: ${context.consecutiveWetDays}
+expected_crop: ${context.expectedCrop ?? "unknown"}
+zone_id: ${context.zoneId}
+zone_climate: ${context.zoneClimate}
+abiotic_score: ${context.abioticScore.toFixed(2)}
+neighbor_sprays:
+${spraySection}
+rag_cases:
+${ragSection}
+
+TASK:
+1) Gatekeeper: reject if blurry/dark/non-plant/non-agri.
+2) If valid, extract visual symptoms.
+3) In same pass, output biotic diagnosis estimate (or None if pollution-like / weak evidence).
+
+Output schema:
+{
+  "is_valid": true|false,
+  "gatekeeper_reason": "বাংলা rejection reason or null",
+  "detected_crop": "English crop name",
+  "visual_symptoms": "Detailed symptom description in English",
+  "biotic_score": 0.0-1.0,
+  "disease_type": "Biotic"|"None",
+  "stress_subtype": "Biotic_Fungal"|"Biotic_Pest"|"Biotic_Viral"|"Biotic_Bacterial"|"None",
+  "confidence": 0.0-1.0,
+  "disease_name_en": "or null",
+  "disease_name_bn": "or null",
+  "weather_supports_disease": true|false,
+  "rag_match_count": number,
+  "reasoning_bn": "2-3 Bengali sentences",
+  "remedy_bn": "Bengali remedy or null",
+  "suggested_disease_id": "kb_diseases.disease_id or null",
+  "suggested_pollutant_id": null,
+  "evidence_chain": [{"type":"visual|weather|rag","observation":"...","supports":"...","weight":0.0}],
+  "counter_evidence": ["..."]
+}`;
+  const { text, tokensUsed } = await callGemini([
+    { text: prompt },
+    { inlineData: { mimeType: detectMimeType(imageBase64), data: imageBase64 } },
+  ]);
+  return { ...(extractJSON(text) as VisionBioticResult), _tokens_used: tokensUsed };
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1051,6 +1463,8 @@ Return ONLY valid JSON (no markdown):
   parsed._tokens_used = tokensUsed;
   return parsed;
 }
+// Kept for backward compatibility in case other modules still import this symbol.
+void runBioticModule;
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STRESS TYPE RESOLVER
@@ -1122,6 +1536,9 @@ async function saveScanLog(params: {
   secondaryCause: string | null;
   compoundStress: boolean;
   overridesApplied: string[];
+  reasoningChain: string[];
+  evidenceSummary: ArbiterResult["evidence_summary"] | null;
+  contradictionsResolved: ArbiterResult["contradictions_resolved"] | null;
 }): Promise<{ error: unknown; scanLogId: string | null }> {
   const {
     farmerId, landId, cropId, lat, lng, imageUrl,
@@ -1129,6 +1546,7 @@ async function saveScanLog(params: {
     stressType, diseaseId, pollutantId, aiConfidence, aiModel,
     tokensUsed, symptomVector, bioticScore, abioticScore, heavyMetalScore,
     secondaryCause, compoundStress, overridesApplied,
+    reasoningChain, evidenceSummary, contradictionsResolved,
   } = params;
 
   void params.ragCasesUsed;
@@ -1179,6 +1597,9 @@ async function saveScanLog(params: {
       secondary_cause: secondaryCause,
       compound_stress: compoundStress,
       overrides_applied: overridesApplied,
+      reasoning_chain: reasoningChain,
+      evidence_summary: evidenceSummary,
+      contradictions_resolved: contradictionsResolved,
     })
     .select("id")
     .single();
@@ -1252,11 +1673,20 @@ export async function POST(req: Request) {
     log(scanId, "📤", "Uploading image...");
     T.upload = Date.now();
 
-    const imagePath = `scans/${farmerId}/${scanId}.jpg`;
+    const mimeType = detectMimeType(imageBase64);
+    const ext = mimeType === "image/png"
+      ? "png"
+      : mimeType === "image/heic"
+        ? "heic"
+        : mimeType === "image/gif"
+          ? "gif"
+          : "jpg";
+
+    const imagePath = `scans/${farmerId}/${scanId}.${ext}`;
     const { error: uploadError } = await supabase.storage
       .from("scan-images")
       .upload(imagePath, Buffer.from(imageBase64, "base64"), {
-        contentType: "image/jpeg", cacheControl: "3600", upsert: false,
+        contentType: mimeType, cacheControl: "3600", upsert: false,
       });
 
     if (uploadError) {
@@ -1276,68 +1706,100 @@ export async function POST(req: Request) {
     log(scanId, "🗄️ ", "Fetching DB context + hotspots (parallel)...");
     T.db = Date.now();
 
-    const [weatherRes, profileRes, landRes, farmerRes, communitySprayRes, hotspotsRes, heavyMetalRes, waterPollutionRes, satelliteWaterRes] =
-      await Promise.all([
-        supabase.from("weather_details")
-          .select("weather_data")
-          .eq("farmer_id", farmerId)
-          .maybeSingle(),
-        supabase.from("farm_profiles")
-          .select(`
+    const [
+      weatherRes,
+      profileRes,
+      landRes,
+      farmerRes,
+      communitySprayRes,
+      sprayEventsRes,
+      hotspotsRes,
+      heavyMetalRes,
+      waterPollutionRes,
+      satelliteWaterRes,
+      kbCropsRes,
+      recentPollutionRes,
+    ] = await Promise.all([
+      supabase.from("weather_details")
+        .select("weather_data")
+        .eq("farmer_id", farmerId)
+        .maybeSingle(),
+      supabase.from("farm_profiles")
+        .select(`
             soil_ph, water_color, water_risk,
             smoke_exposure, canal_contamination, neighbor_problem,
             pest_level, scan_context
           `)
-          .eq("farmer_id", farmerId).eq("land_id", landId)
-          .maybeSingle(),
-        supabase.from("farmer_lands")
-          .select("crop_id, zone_id, land_name")
-          .eq("land_id", landId)
-          .maybeSingle(),
-        supabase.from("farmers")
-          .select("zone_id, kb_zones(climate_profile)")
-          .eq("id", farmerId)
-          .maybeSingle(),
-        supabase.rpc("get_community_spray_risk_for_lands", {
-          p_farmer_id: farmerId, p_radius_km: 1.0,
-        }),
-        // Fetch all active hotspots with extracted lat/lng coordinates
-        // ST_Y = latitude, ST_X = longitude from PostGIS geography point
-        supabase.from("industrial_hotspots")
-          .select(`
+        .eq("farmer_id", farmerId).eq("land_id", landId)
+        .maybeSingle(),
+      supabase.from("farmer_lands")
+        .select("crop_id, zone_id, land_name")
+        .eq("land_id", landId)
+        .maybeSingle(),
+      supabase.from("farmers")
+        .select("zone_id, kb_zones(climate_profile)")
+        .eq("id", farmerId)
+        .maybeSingle(),
+      supabase.rpc("get_community_spray_risk_for_lands", {
+        p_farmer_id: farmerId, p_radius_km: 1.0,
+      }),
+      // Optional additional evidence; does not block scan if table/RLS is missing.
+      supabase
+        .from("spray_events")
+        .select("chemical_type, chemical_name, expires_at, harm_radius_m, land_id")
+        .eq("is_active", true)
+        .limit(50),
+      // Fetch all active hotspots with extracted lat/lng coordinates
+      // ST_Y = latitude, ST_X = longitude from PostGIS geography point
+      supabase.from("industrial_hotspots")
+        .select(`
             id, factory_name_bn, max_plume_km, plume_cone_deg,
             primary_pollutant_id, active_months, is_currently_active
           `)
-          .eq("is_currently_active", true),
-        // Fetch latest heavy metal report for this land
-        supabase.from("heavy_metal_reports")
-          .select("metal_type, confidence_score, severity, notes")
-          .eq("land_id", landId)
-          .order("reported_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from("water_pollution_events")
-          .select("event_id, pollution_type, severity, is_active")
-          .eq("is_active", true),
-        supabase
-          .from("satellite_water_data")
-          .select("suspected_pollution, water_quality_index, turbidity")
-          .eq("grid_cell_id", `${lat.toFixed(2)}_${lng.toFixed(2)}`)
-          .order("recorded_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
+        .eq("is_currently_active", true),
+      // Fetch latest heavy metal report for this land
+      supabase.from("heavy_metal_reports")
+        .select("metal_type, confidence_score, severity")
+        .eq("land_id", landId)
+        .order("reported_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase
+        .from("water_pollution_events")
+        .select("event_id, pollution_type, severity, is_active")
+        .eq("is_active", true),
+      supabase
+        .from("satellite_water_data")
+        .select("suspected_pollution, water_quality_index, turbidity")
+        .eq("grid_cell_id", `${lat.toFixed(2)}_${lng.toFixed(2)}`)
+        .order("recorded_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      // For deterministic land suitability checks
+      supabase
+        .from("kb_crops")
+        .select("crop_id, planting_months, suitable_zones, soil_pref, flood_tolerant, salinity_tolerant"),
+      // For pattern bonus (recurring abiotic pollution scans)
+      supabase
+        .from("scan_logs")
+        .select("id")
+        .eq("farmer_id", farmerId)
+        .eq("stress_type", "Abiotic_Pollution")
+        .gte("created_at", new Date(Date.now() - 30 * 86400000).toISOString()),
+    ]);
 
     log(scanId, "✅", `DB fetch done (${Date.now() - T.db}ms)`, {
       weather: !!weatherRes.data,
       profile: !!profileRes.data,
       land: !!landRes.data,
       sprays: communitySprayRes.data?.length ?? 0,
+      spray_events: sprayEventsRes.data?.length ?? 0,
       hotspots: hotspotsRes.data?.length ?? 0,
       metals: !!heavyMetalRes?.data,
       waterEvents: waterPollutionRes.data?.length ?? 0,
       satellite: !!satelliteWaterRes.data,
+      kb_crops: kbCropsRes.data?.length ?? 0,
+      recent_pollution_scans_30d: recentPollutionRes.data?.length ?? 0,
     });
 
     // ── STEP 3: Fetch hotspot coordinates ─────────────────────────────────
@@ -1387,20 +1849,18 @@ export async function POST(req: Request) {
     const profile = profileRes.data;
     const cropId = landRes.data?.crop_id ?? null;
     const zoneId = landRes.data?.zone_id ?? farmerRes.data?.zone_id ?? "unknown";
-    const [zoneRes, cropRes] = await Promise.all([
+
+    const [zoneRes] = await Promise.all([
       supabase.from("kb_zones").select("*").eq("zone_id", zoneId).maybeSingle(),
-      cropId
-        ? supabase
-          .from("kb_crops")
-          .select("crop_id, planting_months, suitable_zones, soil_pref, flood_tolerant, salinity_tolerant")
-          .eq("crop_id", cropId)
-          .maybeSingle()
-        : Promise.resolve({ data: null }),
     ]);
     const zoneData = (zoneRes.data ?? null) as AnyRecord | null;
     const currentMonth = new Date().getMonth() + 1;
+
+    const kbCrops = (kbCropsRes.data ?? []) as AnyRecord[];
+    const cropRow = cropId ? (kbCrops.find((c) => c.crop_id === cropId) ?? null) : null;
+
     const landSuitability = checkLandSuitability(
-      (cropRes.data ?? null) as AnyRecord | null,
+      cropRow,
       zoneData,
       profile as AnyRecord | null,
       currentMonth
@@ -1443,7 +1903,9 @@ export async function POST(req: Request) {
     const neighborSignal = profile?.neighbor_problem ? 0.05 : 0.00;
     const satelliteSignal = satelliteWaterRes?.data?.suspected_pollution === true ? 0.06 : 0.00;
     const waterEventSignal = (waterPollutionRes?.data?.length ?? 0) > 0 ? 0.15 : 0.00;
-    const patternBonus = 0.00;
+
+    const recentPollutionCount = recentPollutionRes.data?.length ?? 0;
+    const patternBonus = recentPollutionCount >= 3 ? 0.10 : 0.00;
 
     const abioticScore = Math.min(1.0,
       plumeExposure.plumeScore + // 0–0.50 dynamic, science-based
@@ -1465,7 +1927,7 @@ export async function POST(req: Request) {
     });
 
     // ── STEP 6: Weekly survey gate ─────────────────────────────────────────
-    const skipSurveyGate = process.env.SKIP_SURVEY_GATE === "true" && process.env.NODE_ENV !== "production";
+    const skipSurveyGate = process.env.SKIP_SURVEY_GATE === "true";
     log(scanId, "📋", `Survey gate skip:${skipSurveyGate} contextReady:${!!profile?.scan_context}`);
 
     if (!skipSurveyGate && !profile?.scan_context) {
@@ -1493,95 +1955,11 @@ export async function POST(req: Request) {
       log(scanId, "✅", "Survey gate passed");
     }
 
-    // ── STEP 7: Vision ─────────────────────────────────────────────────────
-    log(scanId, "👁️ ", `Vision: ${GEMINI_MODEL}...`);
-    T.vision = Date.now();
-
-    const visionResult = await withRetry(
-      () => runVision(imageBase64, profile?.scan_context ?? ""),
-      `${scanId}-vision`, 3, 1500
-    );
-
-    log(scanId, "✅", `Vision done (${Date.now() - T.vision}ms)`, {
-      is_valid: visionResult.is_valid,
-      detected_crop: visionResult.detected_crop,
-      symptoms_len: visionResult.visual_symptoms?.length ?? 0,
-    });
-
-    if (!visionResult.is_valid) {
-      log(scanId, "🚫", `Gatekeeper rejected: ${visionResult.gatekeeper_reason}`);
-      return NextResponse.json({
-        success: false,
-        message: visionResult.gatekeeper_reason ?? "ছবিটি স্পষ্ট নয়। গাছের পাতার কাছ থেকে পরিষ্কার ছবি তুলুন।",
-      });
-    }
-
-    if (!visionResult.visual_symptoms?.trim()) {
-      visionResult.visual_symptoms = `Unspecified symptoms on ${visionResult.detected_crop ?? "unknown crop"}.`;
-      log(scanId, "⚠️ ", "visual_symptoms empty — using fallback");
-    }
-
-    let symptomVector: number[] | null = null;
-    // ── STEP 8: Embedding (optional) ───────────────────────────────────────
-    if (ENABLE_RAG) {
-      log(scanId, "🔢", "Embedding (text-embedding-004)...");
-      T.embed = Date.now();
-      try {
-        symptomVector = await withRetry(
-          () => getEmbedding(visionResult.visual_symptoms ?? ''),
-          `${scanId}-embed`, 3, 1000
-        );
-        log(scanId, "✅", `Embedding done (${Date.now() - T.embed}ms) — ${symptomVector.length} dims`);
-      } catch (err) {
-        logError(scanId, "Embedding (non-fatal — RAG skipped)", err);
-      }
-    } else {
-      log(scanId, "🔢", "Embedding skipped (ENABLE_RAG=false)");
-    }
-
-    // ── STEP 9: Cache + RAG ────────────────────────────────────────────────
-    log(scanId, "🔍", `Cache + RAG${symptomVector ? "" : " (RAG skipped)"}...`);
-    T.cache = Date.now();
-
-    const weatherHash = md5(weatherStr);
-    const symptomHash = md5(visionResult.visual_symptoms);
-
-    const [cacheRes, ragRes] = await Promise.all([
-      supabase.rpc("lookup_diagnosis_cache", {
-        p_lat: lat, p_lng: lng,
-        p_weather_hash: weatherHash, p_symptom_hash: symptomHash,
-        p_abiotic_bucket: abioticBucket(abioticScore),
-      }),
-      symptomVector
-        ? supabase.rpc("search_verified_rag_cases", {
-          p_query_embedding: symptomVector,
-          p_farmer_lat: lat, p_farmer_lng: lng,
-          p_radius_km: 5.0, p_match_threshold: 0.72,
-          p_match_count: 3, p_min_trust_weight: 0.60,
-        })
-        : Promise.resolve({ data: [] }),
-    ]);
-
-    const cacheHit = cacheRes.data;
-    const ragCases = (ragRes.data ?? []) as RagCase[];
-    const ragCasesUsed = ragCases.length;
-    log(scanId, "✅", `Cache+RAG done (${Date.now() - T.cache}ms)`, {
-      cacheHit: !!(cacheHit?.length > 0), ragCases: ragCases.length,
-    });
-
-    // ── STEP 10: Diagnosis ─────────────────────────────────────────────────
+    // ── STEP 7: Deterministic experts first (for early-exit) ───────────────
     let finalVerdict: FinalVerdict;
     let isCached = false;
-    let communitySignal: AnyRecord = {
-      biotic_community_ratio: 0,
-      abiotic_community_ratio: 0,
-      heavy_metal_community_ratio: 0,
-      total_nearby_scans: 0,
-      epidemic_alert_active: false,
-      epidemic_alert_message_bn: null,
-      community_weight: 0,
-      area_trend_bn: null,
-    };
+    let bioticScoreForLog = 0;
+    let bioticTokensUsed = 0;
     const abioticResult = buildAbioticResult(
       abioticScore,
       plumeExposure,
@@ -1595,265 +1973,374 @@ export async function POST(req: Request) {
       (heavyMetalRes?.data ?? null) as AnyRecord | null,
       plumeExposure
     );
+    const heavyMetalScoreForLog = Number(heavyMetalResult.heavy_metal_score ?? 0);
+    const shouldSkipBioticLLM = abioticScore >= 0.60 || heavyMetalResult.severity === "critical";
+    const temp = typeof weather?.temperature_2m === "number" ? weather.temperature_2m : 0;
+    const weatherBucket = classifyWeatherBucket(temp, humidity, consecutiveWetDays);
+    const weatherHash = md5(weatherBucket);
+    let symptomHash = md5(`${scanId}:${cropId ?? "unknown"}:${weatherBucket}`);
+    let visionResult: VisionBioticResult = {
+      is_valid: true,
+      detected_crop: (cropId as string | null) ?? "unknown crop",
+      visual_symptoms: "LLM skipped due to deterministic early-exit.",
+    };
+    let symptomVector: number[] | null = null;
+    let ragCases: RagCase[] = [];
+    let ragCasesUsed = 0;
 
-    if (cacheHit && cacheHit.length > 0) {
-      log(scanId, "⚡", "CACHE HIT — skipping Judge LLM");
-      const hit = cacheHit[0];
+    // fetch community in deterministic stage so arbiter can always use it
+    const communitySignal: AnyRecord = await getCommunitySignal(lat, lng, zoneId, scanId);
 
-      // Determine if the cached hit was Abiotic or Biotic based on the DB record
-      // The DB cache returns disease_id (if biotic) and pollutant_id (if abiotic)
-      const isAbiotic = hit.pollutant_id != null;
-
-      const cachedBiotic = {
-        biotic_score: isAbiotic ? 0 : 0.92,
-        disease_type: isAbiotic ? "None" : "Biotic",
-        stress_subtype: isAbiotic ? "None" : "Biotic_Fungal",
-        confidence: 0.92,
-        disease_name_en: isAbiotic ? null : hit.cached_diagnosis_bn,
-        disease_name_bn: isAbiotic ? null : hit.cached_diagnosis_bn,
-        weather_supports_disease: false,
-        rag_match_count: 0,
-        reasoning_bn: hit.cached_diagnosis_bn,
-        remedy_bn: hit.remedy_id ?? "রেমেডি তথ্য ক্যাশে নেই।",
-        suggested_disease_id: hit.disease_id ?? null,
-        suggested_pollutant_id: null,
-      } as AnyRecord;
-      const rawScores = {
-        biotic: Number(cachedBiotic.biotic_score ?? 0),
-        abiotic: abioticScore,
-        heavy_metal: Number(heavyMetalResult.heavy_metal_score ?? 0),
-      };
-      const weightedScores = applyCommuntiyWeighting(rawScores, communitySignal);
-      const classification = classifyResults(weightedScores);
-      if (abioticScore >= 0.60) classification.primary = "abiotic";
-      const compoundStress = detectCompoundStress(
-        classification.primary,
-        classification.secondary,
-        weightedScores,
-        cachedBiotic,
-        heavyMetalResult
+    // ── STEP 8: LLM path (single merged call) unless early-exit ─────────────
+    if (!shouldSkipBioticLLM) {
+      log(scanId, "👁️🦠", `Vision+Biotic merged call: ${GEMINI_MODEL}...`);
+      T.vision = Date.now();
+      visionResult = await withRetry(
+        () =>
+          runVisionAndBiotic(imageBase64, {
+            scanContext: profile?.scan_context ?? "",
+            weather: weatherStr,
+            humidity,
+            consecutiveWetDays,
+            expectedCrop: cropId ?? null,
+            zoneId,
+            zoneClimate,
+            abioticScore,
+            neighborSprays,
+            ragCases: [],
+          }),
+        `${scanId}-vision-biotic`,
+        3,
+        1500
       );
-      const stressType = resolveStressType(
-        {
-          disease_type: classification.primary === "biotic" ? "Biotic" : "Abiotic",
-          stress_subtype: classification.primary === "biotic"
-            ? String(cachedBiotic.stress_subtype ?? "Biotic_Fungal")
-            : String(abioticResult.stress_subtype ?? "Abiotic_Pollution"),
-          final_diagnosis: String(cachedBiotic.disease_name_en ?? "Environmental Stress"),
-          suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? null,
-        } as FinalVerdict,
-        plumeExposure.plumeScore,
-        profile?.water_color
-      );
-      finalVerdict = {
-        final_diagnosis: hit.cached_diagnosis_bn,
-        disease_type: classification.primary === "biotic" ? "Biotic" : "Abiotic",
-        stress_subtype: stressType,
-        confidence: classification.primary === "biotic"
-          ? Number(cachedBiotic.confidence ?? 0.92)
-          : Math.min(0.85, abioticScore + 0.10),
-        reasoning_bn: hit.cached_diagnosis_bn,
-        remedy_bn: classification.primary === "biotic"
-          ? String(cachedBiotic.remedy_bn ?? "রেমেডি তথ্য ক্যাশে নেই।")
-          : String(abioticResult.reasoning_bn ?? "পরিবেশগত সংকেত পর্যবেক্ষণ করুন।"),
-        spray_suppressed: abioticScore >= 0.60,
-        suggested_disease_id: classification.primary === "biotic" ? (hit.disease_id ?? null) : null,
-        suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? hit.pollutant_id ?? null,
-        gates: {
-          crop_valid: visionResult.is_valid,
-          crop_detected: `${visionResult.detected_crop ?? "Unknown"}`,
-          growth_stage: "unknown",
-          land_suitable: landSuitability.is_suitable,
-          land_suitability_score: landSuitability.suitability_score,
-          land_warnings: Object.entries((landSuitability.warnings ?? {}) as Record<string, boolean>)
-            .filter(([, v]) => v)
-            .map(([k]) => k),
-        },
-        detection_scores: {
-          biotic: {
-            percentage: Math.round(weightedScores.biotic * 100),
-            disease_name_bn: cachedBiotic.disease_name_bn ?? null,
-            subtype: cachedBiotic.stress_subtype ?? null,
-            disease_id: cachedBiotic.suggested_disease_id ?? null,
-          },
-          abiotic: {
-            percentage: Math.round(weightedScores.abiotic * 100),
-            subtype: abioticResult.stress_subtype,
-            spray_suppressed: abioticScore >= 0.60,
-            active_signals: abioticResult.active_signals,
-          },
-          heavy_metal: {
-            percentage: heavyMetalResult.percentage,
-            metals: heavyMetalResult.metal_types,
-            severity: heavyMetalResult.severity,
-            zone_risk: heavyMetalResult.zone_baseline_risk,
-          },
-        },
-        primary_cause: classification.primary,
-        secondary_cause: classification.secondary,
-        compound_stress: compoundStress,
-        community: {
-          nearby_verified_scans: communitySignal.total_nearby_scans,
-          area_trend_bn: communitySignal.area_trend_bn,
-          epidemic_alert_active: communitySignal.epidemic_alert_active,
-          epidemic_alert_message_bn: communitySignal.epidemic_alert_message_bn,
-        },
-        land_suitability: {
-          suitable: landSuitability.is_suitable,
-          score: landSuitability.suitability_score,
-          reason_bn: landSuitability.unsuitable_reason_bn,
-          adaptive_advice: landSuitability.adaptive_strategy_bn,
-        },
-        secondary_advice_bn: compoundStress?.compound_warning_bn ?? null,
-        source: "cache",
-        model_used: "cache + code-abiotic + code-metal",
-      };
-      isCached = true;
-    } else {
-      log(scanId, "🔬", "Stage 3: Running three detection modules...");
-      T.judge = Date.now();
-      const [bioticResultRaw, fetchedCommunity] = await Promise.all([
-        withRetry(
-          () => runBioticModule(
-            visionResult,
-            {
-              abioticScore: abioticScore.toFixed(2),
-              weather: weatherStr,
-              humidity,
-              consecutiveWetDays,
-              expectedCrop: cropId ?? visionResult.detected_crop ?? null,
-              zoneId,
-              zoneClimate,
-              heavyMetal: heavyMetalRes?.data ?? null,
-              survey: profile ? {
-                ph: profile.soil_ph,
-                water: profile.water_color,
-                smoke: profile.smoke_exposure,
-                canal: profile.canal_contamination,
-                neighbor: profile.neighbor_problem,
-                pest: profile.pest_level,
-              } : null,
-              neighborSprays,
-            },
-            ragCases
-          ),
-          `${scanId}-judge`, 3, 1500
-        ),
-        getCommunitySignal(lat, lng, zoneId, scanId),
-      ]);
-      communitySignal = fetchedCommunity;
-      const bioticResult = adjustBioticScore(bioticResultRaw, humidity, consecutiveWetDays, ragCases);
-      const rawScores = {
-        biotic: Number(bioticResult.biotic_score ?? 0),
-        abiotic: abioticScore,
-        heavy_metal: Number(heavyMetalResult.heavy_metal_score ?? 0),
-      };
-      const weightedScores = applyCommuntiyWeighting(rawScores, communitySignal);
-      const classification = classifyResults(weightedScores);
-      if (abioticScore >= 0.60) classification.primary = "abiotic";
-      const compoundStress = detectCompoundStress(
-        classification.primary,
-        classification.secondary,
-        weightedScores,
-        bioticResult,
-        heavyMetalResult
-      );
-      const stressType = resolveStressType(
-        {
-          disease_type: classification.primary === "biotic" ? "Biotic" : "Abiotic",
-          stress_subtype: classification.primary === "biotic"
-            ? String(bioticResult.stress_subtype ?? "Biotic_Fungal")
-            : String(abioticResult.stress_subtype ?? "Abiotic_Pollution"),
-          final_diagnosis: String(bioticResult.disease_name_en ?? "Environmental Stress"),
-          suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? null,
-        } as FinalVerdict,
-        plumeExposure.plumeScore,
-        profile?.water_color
-      );
-      finalVerdict = {
-        gates: {
-          crop_valid: visionResult.is_valid,
-          crop_detected: `${visionResult.detected_crop ?? "Unknown"}`,
-          growth_stage: "unknown",
-          land_suitable: landSuitability.is_suitable,
-          land_suitability_score: landSuitability.suitability_score,
-          land_warnings: Object.entries((landSuitability.warnings ?? {}) as Record<string, boolean>)
-            .filter(([, v]) => v)
-            .map(([k]) => k),
-        },
-        detection_scores: {
-          biotic: {
-            percentage: Math.round(weightedScores.biotic * 100),
-            disease_name_bn: bioticResult.disease_name_bn ?? null,
-            subtype: bioticResult.stress_subtype ?? null,
-            disease_id: bioticResult.suggested_disease_id ?? null,
-          },
-          abiotic: {
-            percentage: Math.round(weightedScores.abiotic * 100),
-            subtype: abioticResult.stress_subtype,
-            spray_suppressed: abioticScore >= 0.60,
-            active_signals: abioticResult.active_signals,
-          },
-          heavy_metal: {
-            percentage: heavyMetalResult.percentage,
-            metals: heavyMetalResult.metal_types,
-            severity: heavyMetalResult.severity,
-            zone_risk: heavyMetalResult.zone_baseline_risk,
-          },
-        },
-        primary_cause: classification.primary,
-        secondary_cause: classification.secondary,
-        compound_stress: compoundStress,
-        community: {
-          nearby_verified_scans: communitySignal.total_nearby_scans,
-          area_trend_bn: communitySignal.area_trend_bn,
-          epidemic_alert_active: communitySignal.epidemic_alert_active,
-          epidemic_alert_message_bn: communitySignal.epidemic_alert_message_bn,
-        },
-        land_suitability: {
-          suitable: landSuitability.is_suitable,
-          score: landSuitability.suitability_score,
-          reason_bn: landSuitability.unsuitable_reason_bn,
-          adaptive_advice: landSuitability.adaptive_strategy_bn,
-        },
-        spray_suppressed: abioticScore >= 0.60,
-        remedy_bn: classification.primary === "biotic"
-          ? String(bioticResult.remedy_bn ?? "")
-          : String(abioticResult.reasoning_bn),
-        secondary_advice_bn: compoundStress?.compound_warning_bn ?? null,
-        reasoning_bn: classification.primary === "biotic"
-          ? String(bioticResult.reasoning_bn ?? "")
-          : String(abioticResult.reasoning_bn),
-        confidence: classification.primary === "biotic"
-          ? Number(bioticResult.confidence ?? 0)
-          : Math.min(0.85, abioticScore + 0.10),
-        overrides_applied: [],
-        source: "llm+rag",
-        model_used: "gemini-biotic + code-abiotic + code-metal",
-        final_diagnosis: String(bioticResult.disease_name_en ?? "Environmental Stress"),
-        disease_type: classification.primary === "biotic" ? "Biotic" : "Abiotic",
-        stress_subtype: stressType,
-        suggested_disease_id: (bioticResult.suggested_disease_id as string | null | undefined) ?? null,
-        suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? null,
-      };
-
-      log(scanId, "✅", `Judge done (${Date.now() - T.judge!}ms)`, {
-        diagnosis: finalVerdict.final_diagnosis,
-        type: finalVerdict.disease_type,
-        subtype: finalVerdict.stress_subtype,
-        confidence: finalVerdict.confidence,
-        suppressed: finalVerdict.spray_suppressed,
+      bioticTokensUsed = Number(visionResult._tokens_used ?? 0);
+      log(scanId, "✅", `Vision+Biotic done (${Date.now() - T.vision}ms)`, {
+        is_valid: visionResult.is_valid,
+        detected_crop: visionResult.detected_crop,
+        symptoms_len: visionResult.visual_symptoms?.length ?? 0,
       });
+      if (!visionResult.is_valid) {
+        log(scanId, "🚫", `Gatekeeper rejected: ${visionResult.gatekeeper_reason}`);
+        return NextResponse.json({
+          success: false,
+          message: visionResult.gatekeeper_reason ?? "ছবিটি স্পষ্ট নয়। গাছের পাতার কাছ থেকে পরিষ্কার ছবি তুলুন।",
+        });
+      }
+      if (!visionResult.visual_symptoms?.trim()) {
+        visionResult.visual_symptoms = `Unspecified symptoms on ${visionResult.detected_crop ?? "unknown crop"}.`;
+      }
+      symptomHash = md5(visionResult.visual_symptoms ?? "");
+
+      if (ENABLE_RAG) {
+        log(scanId, "🔢", "Embedding (text-embedding-004)...");
+        T.embed = Date.now();
+        try {
+          symptomVector = await withRetry(
+            () => getEmbedding(visionResult.visual_symptoms ?? ""),
+            `${scanId}-embed`,
+            3,
+            1000
+          );
+          log(scanId, "✅", `Embedding done (${Date.now() - T.embed}ms) — ${symptomVector.length} dims`);
+        } catch (err) {
+          logError(scanId, "Embedding (non-fatal — RAG skipped)", err);
+        }
+      } else {
+        log(scanId, "🔢", "Embedding skipped (ENABLE_RAG=false)");
+      }
+
+      log(scanId, "🔍", `Cache + RAG${symptomVector ? "" : " (RAG skipped)"}...`);
+      T.cache = Date.now();
+      const [cacheRes, ragRes] = await Promise.all([
+        supabase.rpc("lookup_diagnosis_cache", {
+          p_lat: lat,
+          p_lng: lng,
+          p_weather_hash: weatherHash,
+          p_symptom_hash: symptomHash,
+          p_abiotic_bucket: abioticBucket(abioticScore),
+        }),
+        symptomVector
+          ? supabase.rpc("search_verified_rag_cases", {
+              p_query_embedding: symptomVector,
+              p_farmer_lat: lat,
+              p_farmer_lng: lng,
+              p_radius_km: 5.0,
+              p_match_threshold: 0.72,
+              p_match_count: 3,
+              p_min_trust_weight: 0.60,
+            })
+          : Promise.resolve({ data: [] }),
+      ]);
+      const cacheHit = cacheRes.data;
+      ragCases = (ragRes.data ?? []) as RagCase[];
+      ragCasesUsed = ragCases.length;
+      log(scanId, "✅", `Cache+RAG done (${Date.now() - T.cache}ms)`, {
+        cacheHit: !!(cacheHit?.length > 0),
+        ragCases: ragCases.length,
+      });
+
+      if (cacheHit && cacheHit.length > 0) {
+        log(scanId, "⚡", "CACHE HIT — skipping model diagnosis logic");
+        const hit = cacheHit[0];
+        const isAbiotic = hit.pollutant_id != null;
+        const cachedBiotic = {
+          biotic_score: isAbiotic ? 0 : 0.92,
+          confidence: 0.92,
+          disease_name_en: isAbiotic ? null : hit.cached_diagnosis_bn,
+          disease_name_bn: isAbiotic ? null : hit.cached_diagnosis_bn,
+          stress_subtype: isAbiotic ? "None" : "Biotic_Fungal",
+          suggested_disease_id: hit.disease_id ?? null,
+        } as AnyRecord;
+        const rawScores = {
+          biotic: Number(cachedBiotic.biotic_score ?? 0),
+          abiotic: abioticScore,
+          heavy_metal: heavyMetalScoreForLog,
+        };
+        bioticScoreForLog = rawScores.biotic;
+        const weightedScores = applyCommuntiyWeighting(rawScores, communitySignal);
+        const classification = classifyResults(weightedScores);
+        const arbiter = runReasoningArbiter({
+          bioticScore: weightedScores.biotic,
+          abioticScore: weightedScores.abiotic,
+          heavyMetalScore: weightedScores.heavy_metal,
+          bioticConfidence: Number(cachedBiotic.confidence ?? 0.92),
+          community: communitySignal,
+          ragMatchCount: 0,
+          evidenceCount: 2,
+          heavyMetalSeverity: String(heavyMetalResult.severity),
+        });
+        const compoundStress = detectCompoundStress(
+          classification.primary,
+          classification.secondary,
+          weightedScores,
+          cachedBiotic,
+          heavyMetalResult
+        );
+        finalVerdict = {
+          final_diagnosis: hit.cached_diagnosis_bn,
+          disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
+          stress_subtype:
+            arbiter.primary_diagnosis === "biotic" ? "Biotic_Fungal" : String(abioticResult.stress_subtype ?? "Abiotic_Pollution"),
+          confidence: arbiter.final_confidence,
+          reasoning_bn: hit.cached_diagnosis_bn,
+          remedy_bn:
+            arbiter.primary_diagnosis === "biotic"
+              ? String(hit.remedy_id ?? "রেমেডি তথ্য ক্যাশে নেই।")
+              : String(abioticResult.reasoning_bn ?? "পরিবেশগত সংকেত পর্যবেক্ষণ করুন।"),
+          spray_suppressed: arbiter.spray_suppressed || abioticScore >= 0.60,
+          suggested_disease_id: arbiter.primary_diagnosis === "biotic" ? (hit.disease_id ?? null) : null,
+          suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? hit.pollutant_id ?? null,
+          primary_cause: arbiter.primary_diagnosis,
+          secondary_cause: arbiter.secondary_diagnosis,
+          compound_stress: compoundStress,
+          source: "cache",
+          model_used: "cache + code-abiotic + code-metal",
+          reasoning: {
+            expert_a: { score: weightedScores.biotic, evidence: [] },
+            expert_b: {
+              score: weightedScores.abiotic,
+              evidence: Array.isArray(abioticResult.active_signals) ? abioticResult.active_signals : [],
+            },
+            expert_c: {
+              score: weightedScores.heavy_metal,
+              evidence: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            },
+            arbiter,
+          },
+        };
+        isCached = true;
+      } else {
+        const bioticAdjusted = adjustBioticScore(
+          {
+            biotic_score: Number(visionResult.biotic_score ?? 0),
+            confidence: Number(visionResult.confidence ?? 0),
+            stress_subtype: visionResult.stress_subtype ?? "None",
+            disease_name_en: visionResult.disease_name_en ?? null,
+            disease_name_bn: visionResult.disease_name_bn ?? null,
+            suggested_disease_id: visionResult.suggested_disease_id ?? null,
+            remedy_bn: visionResult.remedy_bn ?? null,
+            reasoning_bn: visionResult.reasoning_bn ?? "",
+          } as AnyRecord,
+          humidity,
+          consecutiveWetDays,
+          ragCases
+        );
+        const rawScores = {
+          biotic: Number(bioticAdjusted.biotic_score ?? 0),
+          abiotic: abioticScore,
+          heavy_metal: heavyMetalScoreForLog,
+        };
+        bioticScoreForLog = rawScores.biotic;
+        const weightedScores = applyCommuntiyWeighting(rawScores, communitySignal);
+        const classification = classifyResults(weightedScores);
+        const arbiter = runReasoningArbiter({
+          bioticScore: weightedScores.biotic,
+          abioticScore: weightedScores.abiotic,
+          heavyMetalScore: weightedScores.heavy_metal,
+          bioticConfidence: Number(bioticAdjusted.confidence ?? 0),
+          community: communitySignal,
+          ragMatchCount: ragCases.length,
+          evidenceCount: Array.isArray(visionResult.evidence_chain) ? visionResult.evidence_chain.length : 0,
+          heavyMetalSeverity: String(heavyMetalResult.severity),
+        });
+        const compoundStress = detectCompoundStress(
+          classification.primary,
+          classification.secondary,
+          weightedScores,
+          bioticAdjusted,
+          heavyMetalResult
+        );
+        finalVerdict = {
+          final_diagnosis: String(bioticAdjusted.disease_name_en ?? "Environmental Stress"),
+          disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
+          stress_subtype:
+            arbiter.primary_diagnosis === "biotic"
+              ? String(bioticAdjusted.stress_subtype ?? "Biotic_Fungal")
+              : String(abioticResult.stress_subtype ?? "Abiotic_Pollution"),
+          confidence: arbiter.final_confidence,
+          reasoning_bn:
+            arbiter.primary_diagnosis === "biotic"
+              ? String(bioticAdjusted.reasoning_bn ?? "")
+              : String(abioticResult.reasoning_bn),
+          remedy_bn:
+            arbiter.primary_diagnosis === "biotic"
+              ? String(bioticAdjusted.remedy_bn ?? "")
+              : String(abioticResult.reasoning_bn),
+          spray_suppressed: arbiter.spray_suppressed || abioticScore >= 0.60,
+          suggested_disease_id: (bioticAdjusted.suggested_disease_id as string | null | undefined) ?? null,
+          suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? null,
+          primary_cause: arbiter.primary_diagnosis,
+          secondary_cause: arbiter.secondary_diagnosis,
+          compound_stress: compoundStress,
+          source: "merged-vision-biotic",
+          model_used: "gemini-vision+biotic + code-abiotic + code-metal",
+          reasoning: {
+            expert_a: { score: weightedScores.biotic, evidence: visionResult.evidence_chain ?? [] },
+            expert_b: {
+              score: weightedScores.abiotic,
+              evidence: Array.isArray(abioticResult.active_signals) ? abioticResult.active_signals : [],
+            },
+            expert_c: {
+              score: weightedScores.heavy_metal,
+              evidence: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            },
+            arbiter,
+          },
+        };
+      }
+    } else {
+      log(scanId, "⚡", `EARLY EXIT: abiotic=${abioticScore.toFixed(2)}, metal=${heavyMetalResult.severity} → Skip Biotic LLM`);
+      const arbiter = runReasoningArbiter({
+        bioticScore: 0,
+        abioticScore,
+        heavyMetalScore: heavyMetalScoreForLog,
+        bioticConfidence: 0,
+        community: communitySignal,
+        ragMatchCount: 0,
+        evidenceCount: 2,
+        heavyMetalSeverity: String(heavyMetalResult.severity),
+      });
+      finalVerdict = {
+        final_diagnosis: "পরিবেশগত দূষণ",
+        disease_type: "Abiotic",
+        stress_subtype: "Abiotic_Pollution",
+        confidence: arbiter.final_confidence,
+        reasoning_bn: abioticResult.reasoning_bn as string,
+        remedy_bn: `⚠️ কীটনাশক প্রয়োগ করবেন না — এটি দূষণজনিত সমস্যা, রোগ নয়। ${
+          heavyMetalResult.severity === "critical"
+            ? "ভারী ধাতু দূষণ শনাক্ত হয়েছে। উপজেলা কৃষি অফিসে জানান।"
+            : "কারখানার প্লুম এক্সপোজার উচ্চ মাত্রায় পাওয়া গেছে।"
+        }`,
+        spray_suppressed: arbiter.spray_suppressed || true,
+        suggested_disease_id: null,
+        suggested_pollutant_id: (abioticResult.suggested_pollutant_id as string | null | undefined) ?? null,
+        gates: {
+          crop_valid: visionResult.is_valid,
+          crop_detected: `${visionResult.detected_crop ?? "Unknown"}`,
+          growth_stage: "unknown",
+          land_suitable: Boolean(landSuitability.is_suitable),
+          land_suitability_score: Number(landSuitability.suitability_score ?? 0),
+          land_warnings: Object.entries((landSuitability.warnings ?? {}) as Record<string, boolean>)
+            .filter(([, v]) => v)
+            .map(([k]) => k),
+        },
+        detection_scores: {
+          biotic: { percentage: 0, disease_name_bn: null, subtype: null, disease_id: null },
+          abiotic: {
+            percentage: Math.round(abioticScore * 100),
+            subtype: abioticResult.stress_subtype,
+            spray_suppressed: true,
+            active_signals: abioticResult.active_signals,
+          },
+          heavy_metal: {
+            percentage: Number(heavyMetalResult.percentage ?? 0),
+            metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            severity: String(heavyMetalResult.severity ?? "low"),
+            zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+          },
+        },
+        primary_cause: "abiotic",
+        secondary_cause: Number(heavyMetalResult.heavy_metal_score ?? 0) >= 0.20 ? "heavy_metal" : null,
+        compound_stress: null,
+        community: {
+          nearby_verified_scans: 0,
+          area_trend_bn: null,
+          epidemic_alert_active: false,
+          epidemic_alert_message_bn: null,
+        },
+        land_suitability: {
+          suitable: Boolean(landSuitability.is_suitable),
+          score: Number(landSuitability.suitability_score ?? 0),
+          reason_bn: typeof landSuitability.unsuitable_reason_bn === "string" ? landSuitability.unsuitable_reason_bn : null,
+          adaptive_advice: landSuitability.adaptive_strategy_bn,
+        },
+        secondary_advice_bn: null,
+        source: "early_exit_abiotic",
+        model_used: "code-only (LLM skipped)",
+        overrides_applied: ["EARLY_EXIT_ABIOTIC_DOMINANT"],
+        reasoning: {
+          expert_a: { score: 0, evidence: [] },
+          expert_b: {
+            score: abioticScore,
+            evidence: Array.isArray(abioticResult.active_signals) ? abioticResult.active_signals : [],
+          },
+          expert_c: {
+            score: heavyMetalScoreForLog,
+            evidence: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+          },
+          arbiter,
+        },
+      };
+      bioticScoreForLog = 0;
+      isCached = false;
     }
 
-    // ── HARD OVERRIDES (TypeScript enforcement) ────────────────────────────
+    // ── DYNAMIC CONFIDENCE CALIBRATION (before hard overrides) ─────────────
+    finalVerdict = applyOverlapCalibration(
+      finalVerdict,
+      bioticScoreForLog,
+      abioticScore,
+      heavyMetalScoreForLog,
+      scanId
+    );
+
+    // ── HARD OVERRIDES (TypeScript enforcement using LIVE scores) ──────────
     finalVerdict = enforceHardOverrides(
       finalVerdict,
       abioticScore,
-      typeof heavyMetalRes?.data?.severity === "string" ? heavyMetalRes.data.severity : null,
+      heavyMetalScoreForLog,              // ← LIVE calculated score
+      String(heavyMetalResult.severity),  // ← LIVE severity
       plumeExposure.plumeScore
     );
     const finalVerdictWithOverrides = finalVerdict;
+    const arbiterSnapshot =
+      isRecord(finalVerdictWithOverrides.reasoning) &&
+      isRecord(finalVerdictWithOverrides.reasoning.arbiter)
+        ? (finalVerdictWithOverrides.reasoning.arbiter as ArbiterResult)
+        : null;
+    const reasoningChain = arbiterSnapshot?.reasoning_chain ?? [];
+    const evidenceSummary = arbiterSnapshot?.evidence_summary ?? null;
+    const contradictionsResolved = arbiterSnapshot?.contradictions_resolved ?? null;
     if (finalVerdict.overrides_applied?.length) {
       log(scanId, "🔒", `Hard overrides applied: ${finalVerdict.overrides_applied.join(", ")}`);
     }
@@ -1968,6 +2455,11 @@ export async function POST(req: Request) {
         spray_suppressed: finalVerdict.spray_suppressed ?? false,
         is_cached: isCached,
         rag_cases_used: ragCases.length,
+        reasoning_chain: isRecord(finalVerdict.reasoning) && Array.isArray((finalVerdict.reasoning as AnyRecord).arbiter)
+          ? (finalVerdict.reasoning as AnyRecord).arbiter
+          : (isRecord(finalVerdict.reasoning) && isRecord((finalVerdict.reasoning as AnyRecord).arbiter)
+              ? ((finalVerdict.reasoning as AnyRecord).arbiter as AnyRecord).reasoning_chain
+              : []),
       },
       stressType,
       diseaseId: finalVerdict.suggested_disease_id ?? null,
@@ -1975,17 +2467,20 @@ export async function POST(req: Request) {
       aiConfidence: finalVerdict.confidence ?? 0.80,
       aiModel: isCached ? "cache" : GEMINI_MODEL,
       ragCasesUsed,
-      tokensUsed: Number(finalVerdictWithOverrides._tokens_used ?? 0) + Number(visionResult._tokens_used ?? 0),
+      tokensUsed: bioticTokensUsed + Number(visionResult._tokens_used ?? 0),
       symptomVector,
       finalVerdict: finalVerdictWithOverrides,
-      bioticScore: finalVerdictWithOverrides.disease_type === "Biotic" ? (finalVerdictWithOverrides.confidence ?? 0) : 0,
+      bioticScore: bioticScoreForLog,
       abioticScore,
-      heavyMetalScore: Number(heavyMetalRes?.data?.confidence_score ?? 0),
+      heavyMetalScore: heavyMetalScoreForLog,
       secondaryCause: typeof finalVerdictWithOverrides.secondary_cause === "string" ? finalVerdictWithOverrides.secondary_cause : null,
       compoundStress: Boolean(
         isRecord(finalVerdictWithOverrides.compound_stress) && finalVerdictWithOverrides.compound_stress.detected === true
       ),
       overridesApplied: finalVerdictWithOverrides.overrides_applied ?? [],
+      reasoningChain,
+      evidenceSummary,
+      contradictionsResolved,
     });
 
     if (saveError) {
@@ -2035,22 +2530,73 @@ export async function POST(req: Request) {
           stressType
         ).catch((err) => console.error("[AutoVerify] Failed:", err));
       }
-      // TRIGGER HEAVY METAL SYSTEM (Wait for it so we can return its status)
       let heavyMetalStatus = "skipped";
-      if (stressType === 'Abiotic_Pollution' && scanLogId) {
-        log(scanId, "🧪", `Triggering Heavy Metal Detection Pipeline...`);
+      let heavyMetalStrategy: HeavyMetalRiskStrategy | null = null;
+      if ((heavyMetalScoreForLog >= 0.30 || stressType === "Abiotic_Pollution" || String(zoneData?.arsenic_zone_risk) === "High") && scanLogId) {
+        log(scanId, "🧪", `Running synchronous heavy metal strategy (score=${heavyMetalScoreForLog.toFixed(2)})...`);
         try {
-          const hmResult = await triggerHeavyMetalDetection(landId, lat, lng);
-          if (hmResult?.success) {
-            heavyMetalStatus = "success";
-            log(scanId, "✅", "Heavy Metal Check completed via trigger.");
-          } else {
+          const isric = await fetchISRICSnapshot(lat, lng);
+          heavyMetalStrategy = buildHeavyMetalRiskStrategy(heavyMetalResult, cropId, isric.ph_h2o);
+          const evidenceChain = reasoningChain;
+          const { error: hmInsertError } = await supabase.from("heavy_metal_reports").insert({
+            land_id: landId,
+            farmer_id: farmerId,
+            scan_log_id: scanLogId,
+            reported_via: "sync_strategy_engine",
+            metal_type: Array.isArray(heavyMetalStrategy.metals) && heavyMetalStrategy.metals.length > 0 ? heavyMetalStrategy.metals.join(",") : "mixed",
+            confidence_score: Math.min(1, Math.max(0, heavyMetalScoreForLog)),
+            severity: heavyMetalStrategy.risk_level === "moderate" ? "moderate" : heavyMetalStrategy.risk_level === "low" ? "low" : heavyMetalStrategy.risk_level,
+            heavy_metal_strategy: heavyMetalStrategy,
+            evidence_chain: evidenceChain,
+            notes: `sync_strategy_engine | isric_ph=${isric.ph_h2o ?? "null"} | source=${isric.source}`,
+          });
+          if (hmInsertError) {
             heavyMetalStatus = "failed";
-            logError(scanId, "Heavy Metal Detection Trigger", new Error(hmResult?.error ?? "Unknown error"));
+            logError(scanId, "heavy_metal_reports insert", hmInsertError);
+          } else {
+            heavyMetalStatus = "saved";
+          }
+
+          const recommended = heavyMetalStrategy.risk_level === "critical" || heavyMetalStrategy.risk_level === "high"
+            ? ["jute", "fiber_crop"]
+            : ["rice", "jute"];
+          const avoid = heavyMetalStrategy.risk_level === "critical" || heavyMetalStrategy.risk_level === "high"
+            ? ["leafy_vegetables", "tuber"]
+            : [];
+          const { error: riskUpdateError } = await supabase
+            .from("farm_risk_scores")
+            .update({
+              dominant_threat: "Heavy Metal",
+              advice_bn: heavyMetalStrategy.remediation_bn,
+              breakdown: {
+                heavy_metal_risk_level: heavyMetalStrategy.risk_level,
+                recommended_crops: recommended,
+                avoid_crops: avoid,
+                remediation_status: "pending",
+                last_scan_id: scanLogId,
+              },
+              calculated_at: new Date().toISOString(),
+            })
+            .eq("land_id", landId)
+            .eq("is_current", true);
+          if (riskUpdateError) {
+            log(scanId, "⚠️ ", `farm_risk_scores update failed: ${getErrMessage(riskUpdateError)}`);
+          }
+
+          if (heavyMetalStrategy.risk_level === "critical") {
+            await supabase.from("community_alerts").insert({
+              zone_id: zoneId,
+              alert_type: "metal_contamination",
+              alert_message_bn: "জরুরি: ভারী ধাতু দূষণ শনাক্ত হয়েছে।",
+              case_count: 1,
+              is_active: true,
+              trigger_reason: "critical heavy metal strategy alert",
+              trigger_scan_ids: [scanLogId],
+            });
           }
         } catch (err: unknown) {
           heavyMetalStatus = "failed";
-          logError(scanId, "Heavy Metal Detection Trigger", err);
+          logError(scanId, "Heavy Metal Strategy Sync", err);
         }
       }
 
@@ -2071,23 +2617,51 @@ export async function POST(req: Request) {
       return NextResponse.json({
         success: true,
         scan_id: scanId,
-        gates: finalVerdictWithOverrides.gates,
-        detection_scores: finalVerdictWithOverrides.detection_scores,
-        primary_cause: finalVerdictWithOverrides.primary_cause,
-        secondary_cause: finalVerdictWithOverrides.secondary_cause,
+        gates: finalVerdictWithOverrides.gates ?? {
+          crop_valid: visionResult.is_valid ?? true,
+          crop_detected: `${visionResult.detected_crop ?? "Unknown"}`,
+          growth_stage: "unknown",
+          land_suitable: Boolean(landSuitability.is_suitable),
+          land_suitability_score: Number(landSuitability.suitability_score ?? 0),
+          land_warnings: Object.entries((landSuitability.warnings ?? {}) as Record<string, boolean>).filter(([, v]) => v).map(([k]) => k),
+        },
+        detection_scores: finalVerdictWithOverrides.detection_scores ?? {
+          biotic: { percentage: Math.round(bioticScoreForLog * 100), disease_name_bn: null, subtype: null, disease_id: null },
+          abiotic: { percentage: Math.round(abioticScore * 100), subtype: abioticResult.stress_subtype, spray_suppressed: !!finalVerdictWithOverrides.spray_suppressed, active_signals: abioticResult.active_signals },
+          heavy_metal: {
+            percentage: Number(heavyMetalResult.percentage ?? 0),
+            metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            severity: String(heavyMetalResult.severity ?? "low"),
+            zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+          },
+        },
+        primary_cause: finalVerdictWithOverrides.primary_cause ?? (finalVerdictWithOverrides.disease_type === "Biotic" ? "biotic" : "abiotic"),
+        secondary_cause: finalVerdictWithOverrides.secondary_cause ?? null,
         compound_stress: finalVerdictWithOverrides.compound_stress,
-        community: finalVerdictWithOverrides.community,
-        land_suitability: finalVerdictWithOverrides.land_suitability,
+        community: finalVerdictWithOverrides.community ?? {
+          nearby_verified_scans: communitySignal.total_nearby_scans ?? 0,
+          area_trend_bn: communitySignal.area_trend_bn ?? null,
+          epidemic_alert_active: communitySignal.epidemic_alert_active ?? false,
+          epidemic_alert_message_bn: communitySignal.epidemic_alert_message_bn ?? null,
+        },
+        land_suitability: finalVerdictWithOverrides.land_suitability ?? {
+          suitable: Boolean(landSuitability.is_suitable),
+          score: Number(landSuitability.suitability_score ?? 0),
+          reason_bn: typeof landSuitability.unsuitable_reason_bn === "string" ? landSuitability.unsuitable_reason_bn : null,
+          adaptive_advice: landSuitability.adaptive_strategy_bn,
+        },
         spray_suppressed: finalVerdictWithOverrides.spray_suppressed,
         remedy_bn: finalVerdictWithOverrides.remedy_bn,
         secondary_advice_bn: finalVerdictWithOverrides.secondary_advice_bn,
         reasoning_bn: finalVerdictWithOverrides.reasoning_bn,
         confidence: finalVerdictWithOverrides.confidence,
         overrides_applied: finalVerdictWithOverrides.overrides_applied,
-        source: "llm+rag",
+        source: finalVerdictWithOverrides.source ?? "diagnostic_engine",
         model_used: finalVerdictWithOverrides.model_used,
         diagnosis: finalVerdictWithOverrides.final_diagnosis,
         disease_type: finalVerdictWithOverrides.disease_type,
+        reasoning: isRecord(finalVerdictWithOverrides.reasoning) ? finalVerdictWithOverrides.reasoning : null,
+        heavy_metal_strategy: heavyMetalStrategy,
         context: {
           plume_score: plumeExposure.plumeScore.toFixed(3),
           exposure_hours_7d: plumeExposure.exposureHours,
@@ -2097,7 +2671,7 @@ export async function POST(req: Request) {
           rag_cases_used: ragCasesUsed,
         },
         db_saved: !!scanLogId,
-        heavy_metal_pipeline_async: true,
+        heavy_metal_status: heavyMetalStatus,
         image_url: imageUrl,
       });
     }

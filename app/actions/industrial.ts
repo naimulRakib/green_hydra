@@ -139,29 +139,78 @@ export async function fetchSatelliteWaterData(lat: number, lng: number) {
   if (!isFinite(lat) || !isFinite(lng)) return { success: false, error: 'Invalid coordinates' }
 
   const supabase = await createClient()
-  
-  // 1. Generate Synthetic Data (Mocking a real API response like Sentinel Hub)
-  const isPolluted = Math.random() > 0.5 // 50% chance of pollution for demo
-  
-  const mockEarthObservationResponse = {
-    grid_cell_id: `grid_${Math.round(lat*100)}_${Math.round(lng*100)}`,
+
+  type ExternalSatelliteResponse = {
+    grid_cell_id?: string
+    water_quality_index?: number
+    turbidity?: number
+    chlorophyll?: number
+    suspected_pollution?: boolean
+    color_estimate?: string
+    ndwi?: number
+  }
+
+  const apiUrl = process.env.SATELLITE_WATER_API_URL
+  const apiKey = process.env.SATELLITE_WATER_API_KEY
+
+  let response: ExternalSatelliteResponse | null = null
+
+  if (apiUrl) {
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({ lat, lng }),
+        cache: 'no-store',
+      })
+
+      if (!res.ok) {
+        throw new Error(`Satellite API HTTP ${res.status}`)
+      }
+
+      const body = await res.json() as ExternalSatelliteResponse
+      response = body
+    } catch (error) {
+      console.error('[Satellite] External fetch failed, using fallback:', error)
+    }
+  }
+
+  // Fallback mock when external API is not configured or fails
+  if (!response) {
+    const isPolluted = Math.random() > 0.5
+    response = {
+      grid_cell_id: `grid_${Math.round(lat * 100)}_${Math.round(lng * 100)}`,
+      water_quality_index: isPolluted ? (Math.random() * 40) : (60 + Math.random() * 40),
+      turbidity: isPolluted ? (50 + Math.random() * 100) : (5 + Math.random() * 20),
+      chlorophyll: isPolluted ? (20 + Math.random() * 80) : (2 + Math.random() * 10),
+      suspected_pollution: isPolluted,
+      color_estimate: isPolluted ? (Math.random() > 0.5 ? 'Dark Red/Black' : 'Unnatural Green') : 'Clear/Blue',
+      ndwi: isPolluted ? 0.1 : 0.45,
+    }
+  }
+
+  const record = {
+    grid_cell_id: response.grid_cell_id ?? `grid_${Math.round(lat * 100)}_${Math.round(lng * 100)}`,
     location: `SRID=4326;POINT(${lng} ${lat})`,
-    water_quality_index: isPolluted ? (Math.random() * 40) : (60 + Math.random() * 40), // 0-100 scale
-    turbidity: isPolluted ? (50 + Math.random() * 100) : (5 + Math.random() * 20), // NTU
-    chlorophyll: isPolluted ? (20 + Math.random() * 80) : (2 + Math.random() * 10), // ug/L
-    suspected_pollution: isPolluted,
-    color_estimate: isPolluted ? (Math.random() > 0.5 ? 'Dark Red/Black' : 'Unnatural Green') : 'Clear/Blue',
+    water_quality_index: response.water_quality_index ?? 50,
+    turbidity: response.turbidity ?? 0,
+    chlorophyll: response.chlorophyll ?? 0,
+    suspected_pollution: Boolean(response.suspected_pollution),
+    color_estimate: response.color_estimate ?? 'Unknown',
   }
 
   // 2. Insert into the database
   const { error } = await supabase
     .from('satellite_water_data')
-    .insert([mockEarthObservationResponse])
+    .insert([record])
 
   if (error) {
     console.error('[Satellite] Failed to ingest data:', error.message)
     return { success: false, error: error.message }
   }
 
-  return { success: true, data: mockEarthObservationResponse }
+  return { success: true, data: { ...record, lat, lng, ndwi: response.ndwi ?? null } }
 }
