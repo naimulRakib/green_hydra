@@ -68,14 +68,14 @@ function PlumeLayer({ hotspots }: { hotspots: Hotspot[] }) {
       // Skip any rows that somehow slipped through with bad coords
       if (!spot.factory_lat || !spot.factory_lng) return
 
-      // Grey dashed circle = full potential reach radius
+      // Enhanced visibility for reach circle
       const reach = L.circle([spot.factory_lat, spot.factory_lng], {
         radius:      spot.max_plume_km * 1000,
-        color:       '#94a3b8',
-        fillColor:   '#94a3b8',
-        fillOpacity: 0.04,
-        weight:      1,
-        dashArray:   '5 8',
+        color:       spot.is_in_plume ? '#6b7280' : '#9ca3af', // Darker when active
+        fillColor:   spot.is_in_plume ? '#6b7280' : '#9ca3af',
+        fillOpacity: spot.is_in_plume ? 0.08 : 0.04,  // Slightly more visible
+        weight:      spot.is_in_plume ? 1.5 : 1,     // Thicker border when active
+        dashArray:   '8 6', // Better dash pattern
       }).addTo(map)
       layersRef.current.push(reach)
 
@@ -89,12 +89,19 @@ function PlumeLayer({ hotspots }: { hotspots: Hotspot[] }) {
       const color = spot.is_in_plume
         ? (spot.risk_level === 'Critical' ? '#dc2626' : spot.risk_level === 'High' ? '#ea580c' : '#f59e0b')
         : '#94a3b8'
+
+      // Enhanced visibility for plume cones with dynamic CSS classes
+      const plumeClassName = spot.is_in_plume
+        ? (spot.risk_level === 'Critical' ? 'critical-plume' : 'danger-plume')
+        : 'safe-plume'
+
       const wedge = L.polygon(wedgePoints, {
         color,
         fillColor:   color,
-        fillOpacity: spot.is_in_plume ? 0.20 : 0.06,
-        weight:      spot.is_in_plume ? 1.5  : 1,
-        dashArray:   spot.is_in_plume ? undefined : '4 8',
+        fillOpacity: spot.is_in_plume ? 0.45 : 0.15,  // Increased from 0.20/0.06
+        weight:      spot.is_in_plume ? 2.5  : 1.5,   // Increased stroke weight
+        dashArray:   spot.is_in_plume ? undefined : '6 6', // Better dash pattern
+        className:   plumeClassName, // Dynamic CSS classes for animation
       }).addTo(map)
       layersRef.current.push(wedge)
     })
@@ -255,7 +262,11 @@ export default function LeafletMapInner({
     <MapContainer
       center={[farmerLat, farmerLng]}
       zoom={13}
-      style={{ height: '420px', width: '100%' }}
+      style={{
+        height: 'clamp(350px, 45vh, 480px)',
+        width: '100%',
+        minHeight: '350px'
+      }}
       scrollWheelZoom={false}
     >
       <TileLayer

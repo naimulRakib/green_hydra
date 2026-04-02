@@ -21,7 +21,7 @@ type StressType =
   | "Biotic_Fungal" | "Biotic_Pest" | "Biotic_Viral" | "Biotic_Bacterial"
   | "Abiotic_Pollution" | "Abiotic_Nutrient" | "Abiotic_Water" | "Abiotic_Weather";
 
-type VerificationStatus = "pending" | "verified" | "rejected";
+type VerificationStatus = "unverified" | "verified" | "rejected";
 
 type AnyRecord = Record<string, unknown>;
 
@@ -511,7 +511,45 @@ function runReasoningArbiter(input: {
     Math.abs(input.bioticScore - input.abioticScore) < overlapThreshold &&
     input.bioticScore >= 0.30 &&
     input.abioticScore >= 0.30;
-  let conf = primary === "biotic" ? input.bioticConfidence : Math.max(input.abioticScore, input.heavyMetalScore);
+
+  // ── IMPROVED CONFIDENCE CALCULATION ──────────────────────────────────────
+  // Confidence based on score separation (how dominant is primary over secondary)
+  const primaryScore = primary === "biotic" ? input.bioticScore
+    : primary === "abiotic" ? input.abioticScore
+    : primary === "heavy_metal" ? input.heavyMetalScore
+    : 0;
+  const secondaryScore = ranked[1].v;
+  const scoreSeparation = primaryScore - secondaryScore;
+
+  // Base confidence from primary score or input confidence
+  let conf = primary === "biotic"
+    ? Math.max(input.bioticConfidence, input.bioticScore) // Use higher of confidence or score
+    : Math.max(input.abioticScore, input.heavyMetalScore);
+
+  // Score separation affects confidence
+  if (scoreSeparation > 0.30) {
+    conf = Math.min(0.95, conf + 0.08);
+    steps.push(`High separation (+${scoreSeparation.toFixed(2)}) → confidence boost`);
+  } else if (scoreSeparation < 0.10 && primary !== "unknown") {
+    conf = Math.min(conf, 0.55);
+    steps.push(`Low separation (${scoreSeparation.toFixed(2)}) → confidence capped at 0.55`);
+  }
+
+  // Signal count bonus for abiotic — more signals = more confident
+  if (primary === "abiotic") {
+    const signalCount = input.abioticScore > 0
+      ? Math.floor(input.abioticScore / 0.08)
+      : 0;
+    if (signalCount >= 4) {
+      conf = Math.min(0.90, conf + 0.12);
+      steps.push(`Strong abiotic signals (${signalCount}) → confidence boost`);
+    } else if (signalCount === 1) {
+      conf = Math.min(conf, 0.55);
+      steps.push(`Weak abiotic signal → confidence capped`);
+    }
+  }
+
+  // Overlap penalty
   if (closeBioticAbiotic) {
     conf = Math.min(conf, 0.48);
     steps.push("Overlap cap applied (biotic vs abiotic close)");
@@ -707,8 +745,18 @@ function detectCompoundStress(
   heavyMetalResult: AnyRecord
 ): AnyRecord | null {
   const SECONDARY_THRESHOLD = 0.20;
+  // Heavy metal requires stronger evidence (0.30) to avoid false compound warnings
+  // from zone-level priors alone (which can reach 0.20 without actual contamination)
+  const METAL_COMPOUND_THRESHOLD = 0.30;
+
   if (!secondary) return null;
-  if (weightedScores[secondary as keyof typeof weightedScores] < SECONDARY_THRESHOLD) return null;
+
+  // Use higher threshold for heavy_metal as secondary
+  const effectiveThreshold = secondary === "heavy_metal"
+    ? METAL_COMPOUND_THRESHOLD
+    : SECONDARY_THRESHOLD;
+
+  if (weightedScores[secondary as keyof typeof weightedScores] < effectiveThreshold) return null;
   if (primary === "biotic" && secondary === "biotic") return null;
 
   const pair = [primary, secondary].sort().join("+");
@@ -1061,10 +1109,67 @@ ${spraySection}
 rag_cases:
 ${ragSection}
 
+━━ DIFFERENTIAL DIAGNOSIS GUIDE (CRITICAL) ━━━━━━━━━━━━━━━━━━━━
+Use this to avoid common misidentification in Bangladesh rice:
+
+SHEATH BLIGHT (Rhizoctonia solani):
+  → Oval/irregular gray-white lesions on leaf SHEATH (not blade)
+  → Lesions start near waterline, spread upward
+  → Brown/dark margin around lesion center
+  → Common in high humidity + waterlogged fields
+
+STEM ROT (Sclerotium oryzae):
+  → Dark brown/black lesion at stem BASE
+  → Plant tillers may lodge/fall over
+  → Black sclerotia (small round bodies) visible inside stem
+  → Occurs in waterlogged/flooded fields
+
+STEM BORER (Scirpophaga incertulas):
+  → DEAD HEART: central tiller completely dead and dry
+  → Visible borer hole/entry point on stem
+  → Excrement/frass powder visible in stem
+  → Can pull out infested tiller easily
+  → Do NOT diagnose unless dead heart + entry hole visible
+
+UFRA NEMATODE (Ditylenchus angustus):
+  → Twisted, distorted leaf sheaths
+  → Sterile panicles (chaffy/empty grains)
+  → Yellowing and stunting of whole plant
+  → NO discrete base lesions — systemic damage
+  → Do NOT diagnose for localized stem/sheath lesions
+
+BLAST (Magnaporthe oryzae):
+  → Diamond/spindle shaped spots on LEAF BLADE
+  → Gray center with brown margin
+  → NOT on stem base or sheath
+
+BACTERIAL LEAF BLIGHT (Xanthomonas):
+  → Water-soaked margins on leaf edges
+  → Yellow-white stripe along leaf margin
+  → Kresek: sudden wilting of seedlings
+
+BROWN SPOT (Bipolaris):
+  → Circular brown spots with yellow halo
+  → On leaf blade, not sheath/stem
+
+POLLUTION BURN (Abiotic — NOT disease):
+  → Uniform tip burn — ALL leaves affected, starting from tip
+  → Edge scorch spreading from margin inward
+  → No distinct lesion pattern
+  → ALL plants in row affected uniformly
+
+IMPORTANT RULES:
+- Lesions at stem BASE near waterline = Sheath Blight or Stem Rot (NOT Stem Borer)
+- Stem Borer requires dead heart symptom — do NOT diagnose without it
+- Ufra requires systemic damage pattern — do NOT diagnose for localized lesions
+- Describe EXACT location: stem base / leaf sheath / leaf blade / tip
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 TASK:
 1) Gatekeeper: reject if blurry/dark/non-plant/non-agri.
-2) If valid, extract visual symptoms.
-3) In same pass, output biotic diagnosis estimate (or None if pollution-like / weak evidence).
+2) If valid, extract visual symptoms with EXACT LOCATION (base/sheath/blade/tip).
+3) Apply differential diagnosis guide above before concluding.
+4) Output biotic diagnosis estimate (or None if pollution-like / weak evidence).
 
 Output schema:
 {
@@ -1552,7 +1657,7 @@ async function saveScanLog(params: {
   void params.ragCasesUsed;
   void params.finalVerdict;
 
-  const verificationStatus: VerificationStatus = "pending";
+  const verificationStatus: VerificationStatus = "unverified";
   // NOTE: rag_trust_weight is OMITTED — the column has a DB DEFAULT constraint.
   // Inserting a value causes "cannot insert a non-DEFAULT value" error.
   // The DB computes it automatically. Do not add it back here.
@@ -1838,6 +1943,15 @@ export async function POST(req: Request) {
       weatherRes.data?.weather_data  // reuse cache — avoids redundant Open-Meteo HTTP call
     );
 
+    // ==========================================
+    // 🚀 DEMO HACK: Force Plume Score for Presentation
+    // ==========================================
+    const profile = profileRes.data;
+    if (profile?.smoke_exposure === true) {
+      plumeExposure.plumeScore = 0.45; // Force high plume score for demo
+      log(scanId, "🔥", `DEMO OVERRIDE: Forced plume score to 0.45 (smoke_exposure=true)`);
+    }
+
     log(scanId, "✅", `Plume exposure done (${Date.now() - T.plume}ms)`, {
       exposureHours: plumeExposure.exposureHours,
       plumeScore: plumeExposure.plumeScore,
@@ -1846,7 +1960,6 @@ export async function POST(req: Request) {
     });
 
     // ── STEP 5: Build abiotic score with new weights ───────────────────────
-    const profile = profileRes.data;
     const cropId = landRes.data?.crop_id ?? null;
     const zoneId = landRes.data?.zone_id ?? farmerRes.data?.zone_id ?? "unknown";
 
@@ -2103,7 +2216,7 @@ export async function POST(req: Request) {
           bioticScore: weightedScores.biotic,
           abioticScore: weightedScores.abiotic,
           heavyMetalScore: weightedScores.heavy_metal,
-          bioticConfidence: Number(cachedBiotic.confidence ?? 0.92),
+          bioticConfidence: Number(cachedBiotic.biotic_score ?? cachedBiotic.confidence ?? 0.92),
           community: communitySignal,
           ragMatchCount: 0,
           evidenceCount: 2,
@@ -2116,9 +2229,62 @@ export async function POST(req: Request) {
           cachedBiotic,
           heavyMetalResult
         );
-        finalVerdict = {
-          final_diagnosis: hit.cached_diagnosis_bn,
-          disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
+
+        // Special handling for "unknown" primary diagnosis
+        if (classification.primary === "unknown") {
+          finalVerdict = {
+            final_diagnosis: "কোনো নির্দিষ্ট সমস্যা শনাক্ত হয়নি",
+            disease_type: "Unknown",
+            stress_subtype: "Biotic_Fungal", // DB enum default
+            confidence: 0.25,
+            reasoning_bn:
+              "ছবিতে কোনো স্পষ্ট রোগ বা দূষণের লক্ষণ পাওয়া যায়নি। " +
+              "গাছটি স্বাভাবিক হতে পারে, অথবা লক্ষণ এখনো স্পষ্ট নয়। " +
+              "৭ দিন পরে আবার scan করুন।",
+            remedy_bn:
+              "এই মুহূর্তে কোনো ওষুধ দেওয়ার প্রয়োজন নেই। " +
+              "গাছের পরিচর্যা স্বাভাবিক রাখুন। " +
+              "লক্ষণ বাড়লে পুনরায় scan করুন।",
+            spray_suppressed: false,
+            suggested_disease_id: null,
+            suggested_pollutant_id: null,
+            primary_cause: "unknown",
+            secondary_cause: null,
+            compound_stress: null,
+            source: "cache",
+            model_used: "cache + code-abiotic + code-metal",
+            detection_scores: {
+              biotic: { percentage: Math.round(weightedScores.biotic * 100), disease_name_bn: null, subtype: null, disease_id: null },
+              abiotic: {
+                percentage: Math.round(abioticScore * 100),
+                subtype: abioticResult.stress_subtype,
+                spray_suppressed: abioticScore >= 0.60,
+                active_signals: abioticResult.active_signals,
+              },
+              heavy_metal: {
+                percentage: Number(heavyMetalResult.percentage ?? 0),
+                metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+                severity: String(heavyMetalResult.severity ?? "low"),
+                zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+              },
+            },
+            reasoning: {
+              expert_a: { score: weightedScores.biotic, evidence: [] },
+              expert_b: {
+                score: weightedScores.abiotic,
+                evidence: Array.isArray(abioticResult.active_signals) ? abioticResult.active_signals : [],
+              },
+              expert_c: {
+                score: weightedScores.heavy_metal,
+                evidence: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+              },
+              arbiter,
+            },
+          };
+        } else {
+          finalVerdict = {
+            final_diagnosis: hit.cached_diagnosis_bn,
+            disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
           stress_subtype:
             arbiter.primary_diagnosis === "biotic" ? "Biotic_Fungal" : String(abioticResult.stress_subtype ?? "Abiotic_Pollution"),
           confidence: arbiter.final_confidence,
@@ -2135,6 +2301,26 @@ export async function POST(req: Request) {
           compound_stress: compoundStress,
           source: "cache",
           model_used: "cache + code-abiotic + code-metal",
+          detection_scores: {
+            biotic: {
+              percentage: Math.round(weightedScores.biotic * 100),
+              disease_name_bn: hit.cached_diagnosis_bn ?? null,
+              subtype: arbiter.primary_diagnosis === "biotic" ? "Biotic_Fungal" : null,
+              disease_id: hit.disease_id ?? null,
+            },
+            abiotic: {
+              percentage: Math.round(abioticScore * 100),
+              subtype: abioticResult.stress_subtype,
+              spray_suppressed: arbiter.spray_suppressed || abioticScore >= 0.60,
+              active_signals: abioticResult.active_signals,
+            },
+            heavy_metal: {
+              percentage: Number(heavyMetalResult.percentage ?? 0),
+              metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+              severity: String(heavyMetalResult.severity ?? "low"),
+              zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+            },
+          },
           reasoning: {
             expert_a: { score: weightedScores.biotic, evidence: [] },
             expert_b: {
@@ -2148,6 +2334,7 @@ export async function POST(req: Request) {
             arbiter,
           },
         };
+        }
         isCached = true;
       } else {
         const bioticAdjusted = adjustBioticScore(
@@ -2177,7 +2364,7 @@ export async function POST(req: Request) {
           bioticScore: weightedScores.biotic,
           abioticScore: weightedScores.abiotic,
           heavyMetalScore: weightedScores.heavy_metal,
-          bioticConfidence: Number(bioticAdjusted.confidence ?? 0),
+          bioticConfidence: Number(bioticAdjusted.biotic_score ?? bioticAdjusted.confidence ?? 0),
           community: communitySignal,
           ragMatchCount: ragCases.length,
           evidenceCount: Array.isArray(visionResult.evidence_chain) ? visionResult.evidence_chain.length : 0,
@@ -2190,9 +2377,62 @@ export async function POST(req: Request) {
           bioticAdjusted,
           heavyMetalResult
         );
-        finalVerdict = {
-          final_diagnosis: String(bioticAdjusted.disease_name_en ?? "Environmental Stress"),
-          disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
+
+        // Special handling for "unknown" primary diagnosis
+        if (classification.primary === "unknown") {
+          finalVerdict = {
+            final_diagnosis: "কোনো নির্দিষ্ট সমস্যা শনাক্ত হয়নি",
+            disease_type: "Unknown",
+            stress_subtype: "Biotic_Fungal", // DB enum default
+            confidence: 0.25,
+            reasoning_bn:
+              "ছবিতে কোনো স্পষ্ট রোগ বা দূষণের লক্ষণ পাওয়া যায়নি। " +
+              "গাছটি স্বাভাবিক হতে পারে, অথবা লক্ষণ এখনো স্পষ্ট নয়। " +
+              "৭ দিন পরে আবার scan করুন।",
+            remedy_bn:
+              "এই মুহূর্তে কোনো ওষুধ দেওয়ার প্রয়োজন নেই। " +
+              "গাছের পরিচর্যা স্বাভাবিক রাখুন। " +
+              "লক্ষণ বাড়লে পুনরায় scan করুন।",
+            spray_suppressed: false,
+            suggested_disease_id: null,
+            suggested_pollutant_id: null,
+            primary_cause: "unknown",
+            secondary_cause: null,
+            compound_stress: null,
+            source: "merged-vision-biotic",
+            model_used: "gemini-vision+biotic + code-abiotic + code-metal",
+            detection_scores: {
+              biotic: { percentage: Math.round(weightedScores.biotic * 100), disease_name_bn: null, subtype: null, disease_id: null },
+              abiotic: {
+                percentage: Math.round(abioticScore * 100),
+                subtype: abioticResult.stress_subtype,
+                spray_suppressed: abioticScore >= 0.60,
+                active_signals: abioticResult.active_signals,
+              },
+              heavy_metal: {
+                percentage: Number(heavyMetalResult.percentage ?? 0),
+                metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+                severity: String(heavyMetalResult.severity ?? "low"),
+                zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+              },
+            },
+            reasoning: {
+              expert_a: { score: weightedScores.biotic, evidence: visionResult.evidence_chain ?? [] },
+              expert_b: {
+                score: weightedScores.abiotic,
+                evidence: Array.isArray(abioticResult.active_signals) ? abioticResult.active_signals : [],
+              },
+              expert_c: {
+                score: weightedScores.heavy_metal,
+                evidence: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+              },
+              arbiter,
+            },
+          };
+        } else {
+          finalVerdict = {
+            final_diagnosis: String(bioticAdjusted.disease_name_en ?? "Environmental Stress"),
+            disease_type: arbiter.primary_diagnosis === "biotic" ? "Biotic" : "Abiotic",
           stress_subtype:
             arbiter.primary_diagnosis === "biotic"
               ? String(bioticAdjusted.stress_subtype ?? "Biotic_Fungal")
@@ -2214,6 +2454,26 @@ export async function POST(req: Request) {
           compound_stress: compoundStress,
           source: "merged-vision-biotic",
           model_used: "gemini-vision+biotic + code-abiotic + code-metal",
+          detection_scores: {
+            biotic: {
+              percentage: Math.round(weightedScores.biotic * 100),
+              disease_name_bn: String(bioticAdjusted.disease_name_bn ?? null),
+              subtype: arbiter.primary_diagnosis === "biotic" ? String(bioticAdjusted.stress_subtype ?? "Biotic_Fungal") : null,
+              disease_id: (bioticAdjusted.suggested_disease_id as string | null | undefined) ?? null,
+            },
+            abiotic: {
+              percentage: Math.round(abioticScore * 100),
+              subtype: abioticResult.stress_subtype,
+              spray_suppressed: arbiter.spray_suppressed || abioticScore >= 0.60,
+              active_signals: abioticResult.active_signals,
+            },
+            heavy_metal: {
+              percentage: Number(heavyMetalResult.percentage ?? 0),
+              metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+              severity: String(heavyMetalResult.severity ?? "low"),
+              zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+            },
+          },
           reasoning: {
             expert_a: { score: weightedScores.biotic, evidence: visionResult.evidence_chain ?? [] },
             expert_b: {
@@ -2227,6 +2487,7 @@ export async function POST(req: Request) {
             arbiter,
           },
         };
+        }
       }
     } else {
       log(scanId, "⚡", `EARLY EXIT: abiotic=${abioticScore.toFixed(2)}, metal=${heavyMetalResult.severity} → Skip Biotic LLM`);

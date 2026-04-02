@@ -4,6 +4,7 @@
 -- ==========================================================
 
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- ─────────────────────────────────────────
 -- 1) Tables (safe create)
@@ -14,10 +15,22 @@ CREATE TABLE IF NOT EXISTS water_sources (
   source_type TEXT NOT NULL,
   location GEOGRAPHY(Point, 4326),
   reported_by UUID,
+
+  -- Risk + reporting counters (used by RPCs + app)
   risk_zone TEXT DEFAULT 'safe',
+  risk_updated_at TIMESTAMPTZ DEFAULT NOW(),
+  last_reported_at TIMESTAMPTZ DEFAULT NOW(),
   last_color_report TEXT,
+  last_odor_report BOOLEAN,
   fish_kill_reports INTEGER DEFAULT 0,
   verified_count INTEGER DEFAULT 1,
+  total_reports INTEGER DEFAULT 0,
+  danger_reports INTEGER DEFAULT 0,
+
+  -- Satellite enrichment (best-effort)
+  last_satellite_check TIMESTAMPTZ,
+  last_ndwi_value DOUBLE PRECISION,
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -106,6 +119,27 @@ BEGIN
        WHERE location IS NULL AND latitude IS NOT NULL AND longitude IS NOT NULL';
   END IF;
 END $$;
+
+-- Ensure columns required by RPCs/app exist even if the table pre-existed
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS risk_updated_at TIMESTAMPTZ;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS last_reported_at TIMESTAMPTZ;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS last_odor_report BOOLEAN;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS total_reports INTEGER;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS danger_reports INTEGER;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS last_satellite_check TIMESTAMPTZ;
+ALTER TABLE water_sources ADD COLUMN IF NOT EXISTS last_ndwi_value DOUBLE PRECISION;
+
+UPDATE water_sources
+SET
+  risk_updated_at = COALESCE(risk_updated_at, created_at, NOW()),
+  last_reported_at = COALESCE(last_reported_at, created_at, NOW()),
+  total_reports = COALESCE(total_reports, 0),
+  danger_reports = COALESCE(danger_reports, 0)
+WHERE
+  risk_updated_at IS NULL
+  OR last_reported_at IS NULL
+  OR total_reports IS NULL
+  OR danger_reports IS NULL;
 
 CREATE INDEX IF NOT EXISTS water_sources_location_gix
   ON water_sources USING GIST (location);

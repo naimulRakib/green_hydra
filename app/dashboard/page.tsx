@@ -146,7 +146,7 @@ export default async function DashboardPage({
   }
 
   const profileMap: Record<string, FarmProfileRow> = {}
-  if (activeTab === 'overview' && rawPlots.length > 0) {
+  if ((activeTab === 'overview' || activeTab === 'scan') && rawPlots.length > 0) {
     const { data: profiles } = await supabase
       .from('farm_profiles')
       .select('land_id, soil_ph, soil_texture, pest_level, smoke_exposure, water_color, updated_at, scan_context')
@@ -179,6 +179,7 @@ export default async function DashboardPage({
   const { week: thisWeek, year: thisYear } = getISOWeek()
   let weeklyComplete = false
   let completedLandIds: string[] = []
+  let respondedIds = new Set<string>()
   if (rawPlots.length > 0) {
     const { data: responses } = await supabase
       .from('surveys')
@@ -186,10 +187,23 @@ export default async function DashboardPage({
       .eq('farmer_id', user.id)
       .eq('week_number', thisWeek)   // ← FIXED: was 'survey_week'
       .eq('year', thisYear)          // ← FIXED: was 'survey_year'
-    const respondedIds = new Set((responses ?? []).map((r: { land_id: string }) => r.land_id))
+    respondedIds = new Set((responses ?? []).map((r: { land_id: string }) => r.land_id))
     completedLandIds = rawPlots.map((p) => p.land_id).filter((id: string) => respondedIds.has(id))
     weeklyComplete = rawPlots.length > 0 && completedLandIds.length >= rawPlots.length
   }
+
+  // ── 7b. Add last_survey_days to rawPlots for DiseaseScanner ──────
+  // If land has survey this week → 0, otherwise use farm_profile.updated_at or null
+  const plotsWithSurvey = rawPlots.map((p) => {
+    const hasSurveyThisWeek = respondedIds.has(p.land_id)
+    const prof = profileMap[p.land_id]
+    const daysSince = hasSurveyThisWeek
+      ? 0
+      : (prof?.updated_at
+          ? Math.floor((new Date().getTime() - new Date(prof.updated_at).getTime()) / 86400000)
+          : null)
+    return { ...p, last_survey_days: daysSince }
+  })
 
   // ── 8. Risk summaries for risk tab ────────────────────────────
   const riskSummaries = (activeTab === 'risk')
@@ -207,6 +221,40 @@ export default async function DashboardPage({
     severity: string | null
     metal_type: string | null
   }
+
+  // Helper to extract centroid from GeoJSON
+  function getGeoJSONCentroid(geojson: unknown): { lat: number; lng: number } | null {
+    try {
+      const geo = typeof geojson === 'string' ? JSON.parse(geojson) : geojson
+      if (!geo || typeof geo !== 'object') return null
+
+      const base = geo as Record<string, unknown>
+      const geom = base.geometry
+      const g = geom && typeof geom === 'object' ? (geom as Record<string, unknown>) : base
+
+      const type = g.type
+      const coordinates = g.coordinates
+
+      let coords: number[][] = []
+
+      if (type === 'Polygon' && Array.isArray(coordinates) && Array.isArray(coordinates[0])) {
+        coords = coordinates[0] as number[][]
+      } else if (type === 'MultiPolygon' && Array.isArray(coordinates) && Array.isArray(coordinates[0]) && Array.isArray(coordinates[0][0])) {
+        coords = coordinates[0][0] as number[][]
+      }
+
+      if (coords.length === 0) return null
+
+      // GeoJSON is [lng, lat]
+      const lng = coords.reduce((s, c) => s + c[0], 0) / coords.length
+      const lat = coords.reduce((s, c) => s + c[1], 0) / coords.length
+
+      return { lat, lng }
+    } catch {
+      return null
+    }
+  }
+
   let hmMapPlots: HeavyMetalMapPlot[] = []
   if (activeTab === 'risk' && rawPlots.length > 0 && coords) {
     const landIds = rawPlots.map(p => p.land_id)
@@ -235,15 +283,23 @@ export default async function DashboardPage({
         hmReportMap[r.land_id] = r
       }
     }
-    hmMapPlots = rawPlots.map((p, i) => ({
-      land_id: p.land_id,
-      land_name_bn: p.land_name_bn ?? p.land_name ?? `জমি ${i + 1}`,
-      lat: coords.lat + (i * 0.001), // slight offset per plot for visibility
-      lng: coords.lng + (i * 0.001),
-      heavy_metal_score: hmScoreMap[p.land_id] ?? null,
-      severity: hmReportMap[p.land_id]?.severity ?? null,
-      metal_type: hmReportMap[p.land_id]?.metal_type ?? null,
-    }))
+
+    // Use actual land centroids instead of farm coordinates + offset
+    hmMapPlots = rawPlots.map((p, i) => {
+      const centroid = p.boundary_geojson
+        ? getGeoJSONCentroid(p.boundary_geojson)
+        : null
+
+      return {
+        land_id: p.land_id,
+        land_name_bn: p.land_name_bn ?? p.land_name ?? `জমি ${i + 1}`,
+        lat: centroid?.lat ?? (coords.lat + (i * 0.001)), // fallback to offset if no geojson
+        lng: centroid?.lng ?? (coords.lng + (i * 0.001)),
+        heavy_metal_score: hmScoreMap[p.land_id] ?? null,
+        severity: hmReportMap[p.land_id]?.severity ?? null,
+        metal_type: hmReportMap[p.land_id]?.metal_type ?? null,
+      }
+    })
   }
 
   let pollutionStats: {
@@ -355,7 +411,7 @@ export default async function DashboardPage({
 
   // ── 10. Digest stats ────────────────────────────────────────────
   const totalBigha   = rawPlots.reduce((s: number, p) => s + (p.area_bigha ?? 0), 0)
-  const activeSprays = rawPlots.filter((p) => p.spray_active && p.risk_level === 'red').length
+  const activeSprays = rawPlots.filter((p) => p.spray_active).length
   const riskPlots    = rawPlots.filter((p) => p.risk_level !== 'green' && p.spray_active)
 
   return (
@@ -417,7 +473,7 @@ export default async function DashboardPage({
 
           {!weeklyComplete && rawPlots.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
-              <span className="text-xl flex-shrink-0">📋</span>
+              <span className="text-xl shrink-0">📋</span>
               <div>
                 <p className="text-sm font-semibold text-amber-800">
                   সাপ্তাহিক সার্ভে সম্পন্ন করুন ({completedLandIds.length}/{rawPlots.length} জমি)
@@ -511,7 +567,7 @@ export default async function DashboardPage({
             weather.temperature_2m >= 17 &&
             weather.temperature_2m <= 28 && (
             <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3.5 flex items-start gap-3">
-              <span className="text-lg flex-shrink-0">⚠️</span>
+              <span className="text-lg shrink-0">⚠️</span>
               <div>
                 <p className="text-sm font-semibold text-amber-800">ব্লাস্ট রোগের উচ্চ ঝুঁকি</p>
                 <p className="text-xs text-amber-700 mt-0.5">
@@ -538,6 +594,7 @@ export default async function DashboardPage({
               riskPlots={riskPlots}
               communitySpray={communitySpray}
               waterSources={waterSources}
+              satelliteData={satelliteData}
             />
           )}
 
@@ -598,7 +655,7 @@ export default async function DashboardPage({
       ════════════════════════════════ */}
       {activeTab === 'scan' && (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
-          <DiseaseScanner farmerId={user.id} plots={rawPlots} />
+          <DiseaseScanner farmerId={user.id} plots={plotsWithSurvey} />
         </div>
       )}
 
@@ -754,6 +811,11 @@ export default async function DashboardPage({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {rawPlots.map((plot: LandPlotOverview) => {
               const summary = riskMap[plot.land_id]
+              // Extract land centroid for heavy metal pre-score
+              const landCentroid = plot.boundary_geojson
+                ? getGeoJSONCentroid(plot.boundary_geojson)
+                : null
+
               return (
                 <div key={plot.land_id} className="space-y-4">
                   <FarmRiskCard
@@ -767,7 +829,11 @@ export default async function DashboardPage({
                     initialAdviceBn={summary?.advice_bn ?? null}
                     dominantThreat={summary?.dominant_threat ?? null}
                   />
-                  <HeavyMetalRiskCard landId={plot.land_id} lat={coords?.lat} lng={coords?.lng} />
+                  <HeavyMetalRiskCard
+                    landId={plot.land_id}
+                    lat={landCentroid?.lat ?? coords?.lat}
+                    lng={landCentroid?.lng ?? coords?.lng}
+                  />
                 </div>
               )
             })}

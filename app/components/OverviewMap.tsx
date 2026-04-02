@@ -26,6 +26,7 @@
 import { useEffect, useRef, useState, useCallback, useImperativeHandle, forwardRef, useMemo } from 'react'
 import WaterSourceMapLayer from './WaterSourceMapLayer'
 import type { WaterSource } from '@/app/types/water'
+import type { SatelliteWaterData } from '../actions/industrial'
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -219,12 +220,13 @@ interface Props {
   plots:        LandPlotOverview[]
   communitySpray: CommunitySprayPlot[]
   waterSources: WaterSource[]
+  satelliteData: SatelliteWaterData[]
 }
 
 const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   farmerId, farmerLat, farmerLng,
   windFromDeg, windSpeedKmh,
-  hotspots = [], plots = [], communitySpray = [], waterSources = [],
+  hotspots = [], plots = [], communitySpray = [], waterSources = [], satelliteData = [],
 }, ref) {
   void farmerId;
   // ── local GPS state (overrides server-saved location after live GPS / manual) ─
@@ -277,6 +279,7 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   const plumeLayers      = useRef<unknown[]>([])
   const plotLayerMapRef        = useRef<Map<string, unknown>>(new Map())
   const communitySprayLayersRef = useRef<unknown[]>([])
+  const satelliteLayersRef = useRef<unknown[]>([])
 
   // ── Load Leaflet once (DOM-based check, safe across HMR / StrictMode) ───────
   useEffect(() => {
@@ -384,20 +387,67 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 
     if (!localLat || !localLng) return
 
+    // Clickable farm marker with enhanced styling
     const icon = L.divIcon({
       className: '',
-      html: `<div style="width:22px;height:22px;border-radius:50%;background:#3b82f6;border:3px solid #fff;box-shadow:0 0 0 0 rgba(59,130,246,.8);animation:omPulse 2s infinite;display:flex;align-items:center;justify-content:center;font-size:10px;">🌾</div>`,
-      iconSize: [22, 22], iconAnchor: [11, 11], popupAnchor: [0, -14],
+      html: `<div style="
+        width:36px;height:36px;border-radius:50%;
+        background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+        border:4px solid #fff;
+        box-shadow:0 0 0 0 rgba(59,130,246,.8),0 4px 12px rgba(0,0,0,0.3);
+        animation:omPulse 2s infinite;
+        display:flex;align-items:center;justify-content:center;
+        font-size:16px;cursor:pointer;
+      ">🌾</div>`,
+      iconSize: [36, 36], iconAnchor: [18, 18], popupAnchor: [0, -20],
     })
-    farmMarkerRef.current = L.marker([localLat, localLng], { icon, zIndexOffset: 1000 })
-      .bindPopup(`<b>আমার খামার</b><br/><span style="font-family:monospace;font-size:10px;color:#94a3b8">${localLat.toFixed(5)}, ${localLng.toFixed(5)}</span>`)
+    const farmMarker = L.marker([localLat, localLng], { icon, zIndexOffset: 1000 })
+      .bindPopup(`
+        <div style="min-width:180px;font-family:sans-serif;text-align:center;">
+          <div style="font-size:24px;margin-bottom:4px;">🌾</div>
+          <b style="font-size:14px;color:#1d4ed8;">আমার খামার</b><br/>
+          <span style="font-family:monospace;font-size:11px;color:#64748b;">
+            ${localLat.toFixed(5)}, ${localLng.toFixed(5)}
+          </span>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e5e7eb;font-size:11px;color:#6b7280;">
+            👆 ক্লিক করে কেন্দ্রে যান
+          </div>
+        </div>
+      `)
       .addTo(map)
 
-    // 15km reach circle (light dashed)
+    // Click to center on farm
+    ;(farmMarker as unknown as { on: (event: string, handler: () => void) => void }).on('click', () => {
+      map.flyTo([localLat, localLng], 15, { animate: true, duration: 1 })
+    })
+
+    farmMarkerRef.current = farmMarker
+
+    // 15km reach circle (light dashed) with distance label
     farmCircleRef.current = L.circle([localLat, localLng], {
       radius: 15000, color: '#3b82f6', fillColor: '#3b82f6',
-      fillOpacity: 0.03, weight: 1, dashArray: '8 8',
+      fillOpacity: 0.03, weight: 1.5, dashArray: '8 8',
     }).addTo(map)
+
+    // Add distance ring labels (5km, 10km, 15km)
+    const distanceRings = [5000, 10000, 15000]
+    distanceRings.forEach(radius => {
+      const ringLabel = L.divIcon({
+        className: '',
+        html: `<div style="
+          background:rgba(59,130,246,0.9);color:white;
+          font-size:9px;font-weight:bold;padding:2px 6px;
+          border-radius:10px;white-space:nowrap;
+          box-shadow:0 1px 3px rgba(0,0,0,0.2);
+        ">${radius/1000} কিমি</div>`,
+        iconSize: [1, 1], iconAnchor: [0, 0],
+      })
+      // Position label at the east edge of each ring
+      const labelLat = localLat
+      const labelLng = localLng + (radius / 111320) // approx degrees per meter at equator
+      L.marker([labelLat, labelLng], { icon: ringLabel, interactive: false, zIndexOffset: -200 })
+        .addTo(map)
+    })
   }, [localLat, localLng, mapInitialized])
 
   // ── Plot layers with per-land wind risk ───────────────────────────
@@ -491,17 +541,43 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         plotLayersRef.current.push(layer)
         plotLayerMapRef.current.set(plot.land_id, layer)
 
-        // Land name label at centroid
+        // Enhanced land name label at centroid with area and crop info
         if (centroid) {
+          // Calculate distance from farm to this land
+          const distanceFromFarm = (localLat && localLng)
+            ? haversineKm(localLat, localLng, centroid[0], centroid[1])
+            : null
+          const distanceStr = distanceFromFarm !== null
+            ? (distanceFromFarm < 1 ? `${Math.round(distanceFromFarm * 1000)}মি` : `${distanceFromFarm.toFixed(1)}কিমি`)
+            : ''
+
+          const cropName = CROP_LABEL[plot.crop_id ?? ''] ?? ''
+          const areaStr = plot.area_bigha ? `${plot.area_bigha.toFixed(1)}বিঘা` : ''
+          const riskIndicator = landInAnyPlume ? '🔴' : (plot.spray_active ? '🟡' : '🟢')
+
           const labelIcon = L.divIcon({
             className: '',
             html: `<div style="
-              background:rgba(255,255,255,.92);border:1px solid #d1d5db;
-              border-radius:4px;padding:2px 5px;font-size:10px;font-weight:600;
-              color:#374151;white-space:nowrap;pointer-events:none;
-              box-shadow:0 1px 3px rgba(0,0,0,.1)
-            ">${plot.land_name_bn || plot.land_name}</div>`,
-            iconSize:   [1, 1],    // FIX: Leaflet reads iconSize.x internally — must not be undefined
+              background:${landInAnyPlume ? 'rgba(254,226,226,0.95)' : 'rgba(255,255,255,0.95)'};
+              border:2px solid ${landInAnyPlume ? '#ef4444' : (plot.spray_active ? '#f59e0b' : '#22c55e')};
+              border-radius:8px;padding:4px 8px;
+              font-size:11px;font-weight:700;
+              color:${landInAnyPlume ? '#991b1b' : '#1f2937'};
+              white-space:nowrap;pointer-events:none;
+              box-shadow:0 2px 6px rgba(0,0,0,.15);
+              display:flex;flex-direction:column;align-items:center;gap:1px;
+            ">
+              <div style="display:flex;align-items:center;gap:4px;">
+                <span>${riskIndicator}</span>
+                <span>${plot.land_name_bn || plot.land_name}</span>
+              </div>
+              <div style="font-size:9px;font-weight:500;color:#6b7280;display:flex;gap:4px;">
+                ${cropName ? `<span>🌾${cropName}</span>` : ''}
+                ${areaStr ? `<span>📐${areaStr}</span>` : ''}
+                ${distanceStr ? `<span>📍${distanceStr}</span>` : ''}
+              </div>
+            </div>`,
+            iconSize:   [1, 1],
             iconAnchor: [0, 0],
           })
           const label = L.marker(centroid, { icon: labelIcon, interactive: false, zIndexOffset: -500 })
@@ -556,6 +632,188 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
     })
   }, [communitySpray, mapInitialized])
 
+  // ── Satellite water data layer ─────────────────────────────────────
+  useEffect(() => {
+    const L = (window as unknown as { L?: LeafletGlobal }).L
+    const map = mapRef.current
+    if (!L || !map) return
+
+    satelliteLayersRef.current.forEach(l => { try { map.removeLayer(l) } catch {} })
+    satelliteLayersRef.current = []
+
+    if (!satelliteData || satelliteData.length === 0) return
+
+    satelliteData.forEach(sat => {
+      const isPolluted = sat.suspected_pollution
+      const qualityColor = sat.water_quality_index >= 70 ? '#10b981' :
+                          sat.water_quality_index >= 40 ? '#f59e0b' : '#ef4444'
+      const statusColor = isPolluted ? '#ef4444' : '#3b82f6'
+
+      // Quality indicator circle
+      const radius = Math.max(25, Math.min(60, sat.water_quality_index * 0.6))
+
+      // Outer ring for polluted areas - NON-INTERACTIVE (visual only)
+      if (isPolluted) {
+        const outerRing = L.circle([sat.lat, sat.lng], {
+          radius: radius * 2,
+          color: '#ef4444',
+          fillColor: '#ef4444',
+          fillOpacity: 0.08,
+          weight: 1,
+          dashArray: '4 4',
+          interactive: false, // Don't block clicks to satellite marker
+        }).addTo(map)
+        satelliteLayersRef.current.push(outerRing)
+      }
+
+      // Main satellite data circle - VISUAL ONLY (clickable marker handles interaction)
+      const circle = L.circle([sat.lat, sat.lng], {
+        radius,
+        color: statusColor,
+        fillColor: statusColor,
+        fillOpacity: isPolluted ? 0.4 : 0.25,
+        weight: isPolluted ? 3 : 2,
+        interactive: false, // Clickable marker handles interaction
+      }).addTo(map)
+      satelliteLayersRef.current.push(circle)
+
+      // Calculate distance string BEFORE using it
+      const distanceStr = sat.distance_km < 1
+        ? `${Math.round(sat.distance_km * 1000)}মি`
+        : `${sat.distance_km.toFixed(1)}কিমি`
+
+      // Popup content
+      const popupContent = `
+        <div style="font-family:sans-serif;min-width:220px;color:#111;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">
+            <span style="font-size:28px;">🛰️</span>
+            <div>
+              <div style="font-weight:bold;font-size:14px;">স্যাটেলাইট ডাটা</div>
+              <div style="font-size:11px;color:#6b7280;">${distanceStr} দূরে</div>
+            </div>
+          </div>
+
+          <div style="
+            display:inline-flex;align-items:center;gap:4px;
+            background:${isPolluted ? '#ef4444' : '#10b981'};
+            color:white;font-size:11px;font-weight:bold;
+            padding:4px 10px;border-radius:99px;margin-bottom:10px;
+          ">${isPolluted ? '⚠️ সন্দেহজনক দূষণ' : '✓ পানি পরিষ্কার'}</div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px;">
+            <div style="background:#f3f4f6;padding:6px 8px;border-radius:8px;">
+              <div style="font-size:10px;color:#9ca3af;">পানি গুণমান সূচক</div>
+              <div style="font-weight:700;color:${qualityColor};">
+                ${Math.round(sat.water_quality_index)}/100
+              </div>
+            </div>
+            <div style="background:#f3f4f6;padding:6px 8px;border-radius:8px;">
+              <div style="font-size:10px;color:#9ca3af;">টার্বিডিটি</div>
+              <div style="font-weight:700;">${sat.turbidity.toFixed(1)} NTU</div>
+            </div>
+            <div style="background:#f3f4f6;padding:6px 8px;border-radius:8px;grid-column:span 2;">
+              <div style="font-size:10px;color:#9ca3af;">পানির রঙ (AI)</div>
+              <div style="font-weight:700;">${sat.color_estimate}</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:10px;">
+            <span style="
+              background:#8b5cf6;color:white;font-size:10px;font-weight:600;
+              padding:3px 8px;border-radius:10px;
+            ">🛰️ Sentinel-2</span>
+            ${isPolluted ? `
+              <span style="
+                background:#ef4444;color:white;font-size:10px;font-weight:600;
+                padding:3px 8px;border-radius:10px;
+              ">⚠️ AI সতর্কতা</span>
+            ` : ''}
+          </div>
+
+          ${isPolluted ? `
+            <div style="
+              background:#fef2f2;border:1px solid #fecaca;
+              border-radius:10px;padding:10px;font-size:11px;
+            ">
+              <div style="font-weight:bold;color:#dc2626;margin-bottom:4px;">⚠️ সতর্কতা</div>
+              <div style="color:#991b1b;">
+                এই এলাকায় দূষণ সন্দেহ করা হচ্ছে।
+                <br/>📞 DoE হটলাইন: <b>16100</b>
+              </div>
+            </div>
+          ` : `
+            <div style="
+              background:#f0fdf4;border:1px solid #bbf7d0;
+              border-radius:10px;padding:10px;font-size:11px;
+            ">
+              <div style="font-weight:bold;color:#16a34a;margin-bottom:4px;">✓ ভাল অবস্থা</div>
+              <div style="color:#166534;">
+                স্যাটেলাইট বিশ্লেষণে এই এলাকায় পানি পরিষ্কার দেখাচ্ছে।
+              </div>
+            </div>
+          `}
+        </div>
+      `;
+
+      // Invisible clickable marker with HIGH z-index for proper click handling
+      const clickableIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+          width:${radius * 2}px;
+          height:${radius * 2}px;
+          border-radius:50%;
+          cursor:pointer;
+        "></div>`,
+        iconSize: [radius * 2, radius * 2],
+        iconAnchor: [radius, radius],
+      })
+      const clickableMarker = L.marker([sat.lat, sat.lng], {
+        icon: clickableIcon,
+        zIndexOffset: 2000,  // HIGH z-index to be above all other layers
+      })
+        .bindPopup(popupContent, { maxWidth: 280 })
+        .addTo(map)
+      satelliteLayersRef.current.push(clickableMarker)
+
+      // Label marker
+      const labelIcon = L.divIcon({
+        className: '',
+        html: `<div style="
+          display:flex;flex-direction:column;align-items:center;gap:2px;
+          pointer-events:none;
+        ">
+          <div style="font-size:18px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.3));">🛰️</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:1px;">
+            <span style="
+              background:${isPolluted ? '#ef4444' : '#8b5cf6'};
+              color:white;font-size:9px;font-weight:bold;
+              padding:2px 6px;border-radius:8px;white-space:nowrap;
+              box-shadow:0 1px 3px rgba(0,0,0,0.3);
+            ">${isPolluted ? '⚠️ দূষিত' : '✓ পরিষ্কার'}</span>
+            <span style="
+              background:${qualityColor};
+              color:white;font-size:8px;font-weight:600;
+              padding:1px 5px;border-radius:6px;white-space:nowrap;
+            ">WQI: ${Math.round(sat.water_quality_index)}</span>
+            <span style="
+              background:rgba(59,130,246,0.9);
+              color:white;font-size:8px;font-weight:600;
+              padding:1px 5px;border-radius:6px;white-space:nowrap;
+            ">📍${distanceStr}</span>
+          </div>
+        </div>`,
+        iconSize: [50, 60],
+        iconAnchor: [25, 30],
+      })
+      const labelMarker = L.marker([sat.lat, sat.lng], {
+        icon: labelIcon,
+        interactive: false,
+        zIndexOffset: 2100,  // Above clickable marker
+      }).addTo(map)
+      satelliteLayersRef.current.push(labelMarker)
+    })
+  }, [satelliteData, mapInitialized])
+
   // ── Industrial plume layers ───────────────────────────────────────
   useEffect(() => {
     const L = (window as unknown as { L?: LeafletGlobal }).L
@@ -565,89 +823,149 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
     plumeLayers.current.forEach(l => { try { map.removeLayer(l) } catch {} })
     plumeLayers.current = []
 
+    // Add a prominent wind direction indicator at top of map
+    if (localLat && localLng && windSpeedKmh >= 1) {
+      const windToDeg = (windFromDeg + 180) % 360
+      const windDirs = ['উত্তর','উ-পূ','পূর্ব','দ-পূ','দক্ষিণ','দ-প','পশ্চিম','উ-প']
+      const windToCardinal = windDirs[Math.round(windToDeg / 45) % 8]
+
+      // Large wind direction indicator
+      const windIndicator = L.divIcon({
+        className: '',
+        html: `<div style="
+          display:flex;flex-direction:column;align-items:center;gap:4px;
+          background:rgba(255,255,255,0.95);padding:8px 12px;
+          border-radius:12px;border:2px solid #3b82f6;
+          box-shadow:0 4px 12px rgba(0,0,0,0.15);
+        ">
+          <div style="font-size:11px;font-weight:700;color:#1e40af;">💨 বাতাসের দিক</div>
+          <div style="
+            width:40px;height:40px;border-radius:50%;
+            background:linear-gradient(135deg,#3b82f6,#1d4ed8);
+            display:flex;align-items:center;justify-content:center;
+            transform:rotate(${windToDeg}deg);
+            font-size:20px;color:white;
+            box-shadow:0 2px 8px rgba(59,130,246,0.4);
+          ">➤</div>
+          <div style="font-size:10px;font-weight:600;color:#475569;">
+            ${windToCardinal}মুখী · ${windSpeedKmh} km/h
+          </div>
+        </div>`,
+        iconSize: [100, 90], iconAnchor: [50, 45],
+      })
+      const windMarker = L.marker([localLat + 0.015, localLng - 0.02], {
+        icon: windIndicator,
+        interactive: false,
+        zIndexOffset: 500
+      }).addTo(map)
+      plumeLayers.current.push(windMarker)
+    }
+
+    const windToDeg = (windFromDeg + 180) % 360
+
     hotspots.forEach(h => {
       const color = FACTORY_COLOR[h.risk_level] ?? '#94a3b8'
-
-      // Dashed reach circle
-      const reach = L.circle([h.factory_lat, h.factory_lng], {
-        radius: h.max_plume_km * 1000,
-        color: '#94a3b8', fillColor: '#94a3b8',
-        fillOpacity: 0.03, weight: 1, dashArray: '5 8',
-      }).addTo(map)
-      plumeLayers.current.push(reach)
-
-      // Directional plume wedge
-      const halfAngle = (h.plume_cone_deg ?? 90) / 2
-      // Use windFromDeg prop (reliable) instead of h.wind_to_deg (may be inverted from server)
-      const correctWindToDeg = (windFromDeg + 180) % 360
-      const wedge = L.polygon(
-        computeWedge(h.factory_lat, h.factory_lng, correctWindToDeg, h.max_plume_km, halfAngle),
-        {
-          color,
-          fillColor: color,
-          // Use local GPS for client-side plume check (more reliable than server value)
-          fillOpacity: (localLat && localLng && isInPlumeClient(
-            h.factory_lat, h.factory_lng, localLat, localLng,
-            windFromDeg, windSpeedKmh, h.max_plume_km, (h.plume_cone_deg ?? 90) / 2
-          )) ? 0.22 : 0.07,
-          weight: (localLat && localLng && isInPlumeClient(
-            h.factory_lat, h.factory_lng, localLat, localLng,
-            windFromDeg, windSpeedKmh, h.max_plume_km, (h.plume_cone_deg ?? 90) / 2
-          )) ? 1.5 : 1,
-          dashArray: (localLat && localLng && isInPlumeClient(
-            h.factory_lat, h.factory_lng, localLat, localLng,
-            windFromDeg, windSpeedKmh, h.max_plume_km, (h.plume_cone_deg ?? 90) / 2
-          )) ? undefined : '4 8',
-        }
-      ).addTo(map)
-      plumeLayers.current.push(wedge)
-
-      // Factory icon
       const clientInPlume = localLat && localLng && isInPlumeClient(
         h.factory_lat, h.factory_lng, localLat, localLng,
         windFromDeg, windSpeedKmh, h.max_plume_km, (h.plume_cone_deg ?? 90) / 2
       )
+
+      // Dashed reach circle - NON-INTERACTIVE
+      const reach = L.circle([h.factory_lat, h.factory_lng], {
+        radius: h.max_plume_km * 1000,
+        color: '#94a3b8', fillColor: '#94a3b8',
+        fillOpacity: 0.05, weight: 1, dashArray: '5 8',
+        interactive: false, // Don't block clicks to satellite markers
+      }).addTo(map)
+      plumeLayers.current.push(reach)
+
+      // Directional plume wedge (downwind)
+      const halfAngle = (h.plume_cone_deg ?? 90) / 2
+      const wedgePoints = computeWedge(
+        h.factory_lat, h.factory_lng,
+        windToDeg, h.max_plume_km, halfAngle
+      )
+      const wedgeColor = clientInPlume ? color : '#94a3b8'
+      const wedge = L.polygon(wedgePoints, {
+        color: wedgeColor,
+        fillColor: wedgeColor,
+        fillOpacity: clientInPlume ? 0.18 : 0.06,
+        weight: clientInPlume ? 1.3 : 1,
+        dashArray: clientInPlume ? undefined : '4 6',
+        interactive: false,
+      }).addTo(map)
+      plumeLayers.current.push(wedge)
+
+      // Factory icon with distance badge
       const bg = clientInPlume ? color : '#6b7280'
       const fIcon = L.divIcon({
         className: '',
-        html: `<div style="width:30px;height:30px;border-radius:8px;background:${bg};border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center;font-size:13px;">🏭</div>`,
-        iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -18],
+        html: `<div style="position:relative;">
+          <div style="
+            width:38px;height:38px;border-radius:10px;
+            background:${clientInPlume ? `linear-gradient(135deg,${color},${color}dd)` : 'linear-gradient(135deg,#6b7280,#4b5563)'};
+            border:3px solid #fff;
+            box-shadow:0 3px 10px rgba(0,0,0,.3);
+            display:flex;align-items:center;justify-content:center;
+            font-size:18px;
+            ${clientInPlume ? 'animation:factory-warning 1.5s ease-in-out infinite;' : ''}
+          ">🏭</div>
+          <div style="
+            position:absolute;top:-8px;right:-8px;
+            background:${clientInPlume ? '#dc2626' : '#3b82f6'};
+            color:white;font-size:9px;font-weight:bold;
+            padding:2px 5px;border-radius:8px;
+            white-space:nowrap;
+            box-shadow:0 1px 4px rgba(0,0,0,0.2);
+          ">${h.distance_km}km</div>
+        </div>`,
+        iconSize: [38, 38], iconAnchor: [19, 19], popupAnchor: [0, -22],
       })
       const marker = L.marker([h.factory_lat, h.factory_lng], { icon: fIcon })
         .bindPopup(
-          `<div style="width:200px;font-family:sans-serif;font-size:12px">` +
-          `<strong style="color:${clientInPlume ? '#dc2626' : '#374151'}">${h.factory_name_bn}</strong><br/>` +
-          `দূরত্ব: ${h.distance_km} কিমি<br/>` +
-          `দূষণকারী: ${h.primary_pollutant}<br/>` +
-          `ঝুঁকি: <b style="color:${FACTORY_COLOR[h.risk_level]}">${h.risk_level}</b><br/>` +
-          `ধোঁয়া খামারে আসছে: <b>${(localLat && localLng && isInPlumeClient(
-            h.factory_lat, h.factory_lng, localLat, localLng,
-            windFromDeg, windSpeedKmh, h.max_plume_km, (h.plume_cone_deg ?? 90) / 2
-          )) ? 'হ্যাঁ ⚠️' : 'না ✓'}</b>` +
-          `</div>`
+          `<div style="min-width:220px;font-family:sans-serif;font-size:12px;color:#374151;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid #e5e7eb;">
+              <span style="font-size:24px;">🏭</span>
+              <div>
+                <strong style="font-size:14px;color:${clientInPlume ? '#dc2626' : '#374151'};">${h.factory_name_bn}</strong>
+                <div style="font-size:11px;color:#6b7280;">${h.industry_type}</div>
+              </div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+              <div style="background:#f3f4f6;padding:6px 8px;border-radius:6px;">
+                <div style="font-size:10px;color:#9ca3af;">দূরত্ব</div>
+                <div style="font-weight:700;color:#1f2937;">${h.distance_km} কিমি</div>
+              </div>
+              <div style="background:#f3f4f6;padding:6px 8px;border-radius:6px;">
+                <div style="font-size:10px;color:#9ca3af;">প্লাম ব্যাসার্ধ</div>
+                <div style="font-weight:700;color:#1f2937;">${h.max_plume_km} কিমি</div>
+              </div>
+              <div style="background:#f3f4f6;padding:6px 8px;border-radius:6px;">
+                <div style="font-size:10px;color:#9ca3af;">দূষণকারী</div>
+                <div style="font-weight:700;color:#1f2937;">${h.primary_pollutant}</div>
+              </div>
+              <div style="background:${clientInPlume ? '#fef2f2' : '#f0fdf4'};padding:6px 8px;border-radius:6px;border:1px solid ${clientInPlume ? '#fecaca' : '#bbf7d0'};">
+                <div style="font-size:10px;color:#9ca3af;">অবস্থা</div>
+                <div style="font-weight:700;color:${clientInPlume ? '#dc2626' : '#16a34a'};">
+                  ${clientInPlume ? '⚠️ ধোঁয়া আসছে' : '✓ নিরাপদ'}
+                </div>
+              </div>
+            </div>
+            <div style="
+              background:${clientInPlume ? '#fef2f2' : '#eff6ff'};
+              border:1px solid ${clientInPlume ? '#fecaca' : '#bfdbfe'};
+              border-radius:8px;padding:8px;font-size:11px;
+              color:${clientInPlume ? '#991b1b' : '#1e40af'};
+            ">
+              ${clientInPlume
+                ? '⚠️ এই কারখানার ধোঁয়া বাতাসের দিকে আপনার খামারে আসছে।'
+                : '✓ বর্তমান বায়ু দিকে এই কারখানার ধোঁয়া আপনার খামারে আসছে না।'}
+            </div>
+          </div>`
         )
         .addTo(map)
       plumeLayers.current.push(marker)
     })
-
-    // Wind arrow — positioned above & left of farm
-    if (localLat && localLng && map) {
-      const arrowLat = localLat + 0.012
-      const arrowLng = localLng - 0.018
-      const label = windSpeedKmh < 2 ? 'শান্ত বায়ু' : `${windSpeedKmh} km/h`
-      const windToDeg = (windFromDeg + 180) % 360
-      const arrowIcon = L.divIcon({
-        className: '',
-        html: `<div style="display:flex;flex-direction:column;align-items:center;gap:2px;transform:translate(-50%,-50%)">
-          <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.95);border:1.5px solid #94a3b8;box-shadow:0 1px 6px rgba(0,0,0,.15);display:flex;align-items:center;justify-content:center;transform:rotate(${windToDeg}deg);font-size:14px;">↑</div>
-          <span style="font-size:9px;font-weight:600;color:#475569;background:white;padding:1px 5px;border-radius:4px;border:1px solid #e2e8f0;white-space:nowrap;">${label}</span>
-        </div>`,
-        iconSize: [70, 48], iconAnchor: [35, 24],
-      })
-      const arrow = L.marker([arrowLat, arrowLng], { icon: arrowIcon, interactive: false, zIndexOffset: -100 })
-        .addTo(map)
-      plumeLayers.current.push(arrow)
-    }
   }, [hotspots, windFromDeg, windSpeedKmh, localLat, localLng, mapInitialized])
 
   // ── Expose flyToPlot to parent via ref ──────────────────────────
@@ -757,7 +1075,7 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${(hasPlumeFarm || landsInPlume.length > 0) ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
+              <span className={`w-2 h-2 rounded-full shrink-0 ${(hasPlumeFarm || landsInPlume.length > 0) ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
               খামার ও জমির মানচিত্র
               <span className="text-xs font-normal text-gray-400">· ১৫ কিমি ব্যাসার্ধ</span>
             </h3>
@@ -765,7 +1083,7 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
               {localLat && localLng
                 ? `আমার খামার: ${localLat.toFixed(4)}, ${localLng.toFixed(4)} · `
                 : 'অবস্থান সেট করুন · '}
-              বায়ু {windFromCardinal} থেকে → {windToCardinal}মুখী ({windFromDeg}°)
+              বায়ু {windFromCardinal} থেকে → {windToCardinal}মুখী ({windToDeg_display}°)
               {windSpeedKmh < 2 ? ' · শান্ত' : ` · ${windSpeedKmh} km/h`}
             </p>
           </div>
@@ -792,37 +1110,37 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         </div>
 
         {/* GPS + manual controls */}
-        <div className="mt-3 flex items-end gap-2 flex-wrap">
+        <div className="mt-3 flex items-end gap-2 flex-wrap bg-gray-50/50 rounded-xl p-2.5 border border-gray-100">
           <button
             onClick={handleLiveGPS}
             disabled={gpsLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-all shadow-sm hover:shadow-md active:scale-95"
           >
             {gpsLoading
-              ? <><span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> GPS...</>
-              : '📡 লাইভ GPS'}
+              ? <><span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin inline-block" /> GPS...</>
+              : <><span className="text-sm">📡</span> লাইভ GPS</>}
           </button>
-          <div className="flex items-center gap-1.5">
+          <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap sm:flex-nowrap">
             <input
-              type="number" step="0.000001" placeholder="Lat"
+              type="number" step="0.000001" placeholder="Latitude"
               value={manualLat}
               onChange={e => setManualLat(e.target.value)}
-              className="w-28 px-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-blue-400"
+              className="flex-1 min-w-[100px] px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all bg-white"
             />
             <input
-              type="number" step="0.000001" placeholder="Lng"
+              type="number" step="0.000001" placeholder="Longitude"
               value={manualLng}
               onChange={e => setManualLng(e.target.value)}
-              className="w-28 px-2 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-blue-400"
+              className="flex-1 min-w-[100px] px-3 py-2 text-xs border border-gray-200 rounded-xl outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-all bg-white"
             />
             <button
               onClick={handleManualConfirm}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors whitespace-nowrap"
+              className="px-4 py-2 text-xs font-bold rounded-xl bg-green-600 text-white hover:bg-green-700 transition-all shadow-sm whitespace-nowrap active:scale-95"
             >
               ✓ যান
             </button>
           </div>
-          {error && <span className="text-xs text-red-600">{error}</span>}
+          {error && <span className="w-full text-xs text-red-600 bg-red-50 px-3 py-1.5 rounded-lg border border-red-100">{error}</span>}
         </div>
       </div>
 
@@ -832,29 +1150,44 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         waterSources={waterSources}
         mapInitialized={mapInitialized}
       />
-      <div ref={mapDivRef} style={{ height: 460, width: '100%', zIndex: 1 }} />
+      <div
+        ref={mapDivRef}
+        className="w-full relative"
+        style={{
+          height: 'clamp(320px, 50vh, 520px)',
+          minHeight: '320px',
+          zIndex: 1
+        }}
+      />
 
       {/* ── Legend ── */}
-      <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 flex items-center gap-4 flex-wrap">
-        <span className="text-xs text-gray-400 font-medium">লেজেন্ড:</span>
-        {[
-          { color: '#22c55e', label: 'নিরাপদ জমি' },
-          { color: '#f59e0b', label: 'স্প্রে শেষ হচ্ছে' },
-          { color: '#ef4444', label: 'সক্রিয় স্প্রে / দূষণ' },
-          { color: '#94a3b8', label: 'নিরাপদ কারখানা' },
-          { color: '#f97316', label: 'প্রতিবেশী স্প্রে' },
-          { color: '#dc2626', label: 'সক্রিয় প্লাম' },
-        ].map(({ color, label }) => (
-          <div key={label} className="flex items-center gap-1.5 text-xs text-gray-500">
-            <div className="w-3 h-3 rounded-sm" style={{ background: color, opacity: 0.75 }} />
-            {label}
-          </div>
-        ))}
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>🌾</span> আমার খামার
+      <div className="px-4 py-3 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-gray-600 bg-white px-2 py-0.5 rounded border border-gray-200">🗺️ লেজেন্ড</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span>🏭</span> কারখানা
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
+          {[
+            { color: '#22c55e', label: 'নিরাপদ জমি', icon: '🌱' },
+            { color: '#f59e0b', label: 'স্প্রে শেষ হচ্ছে', icon: '⏳' },
+            { color: '#ef4444', label: 'দূষণ/স্প্রে', icon: '⚠️' },
+            { color: '#94a3b8', label: 'কারখানা', icon: '🏭' },
+            { color: '#f97316', label: 'প্রতিবেশী স্প্রে', icon: '🏘️' },
+            { color: '#dc2626', label: 'সক্রিয় প্লাম', icon: '💨' },
+          ].map(({ color, label, icon }) => (
+            <div key={label} className="flex items-center gap-1.5 text-xs text-gray-600 bg-white rounded-lg px-2 py-1.5 border border-gray-100 shadow-sm">
+              <div className="w-3 h-3 rounded-full shrink-0" style={{ background: color }} />
+              <span className="hidden sm:inline">{icon}</span>
+              <span className="truncate font-medium">{label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-gray-100">
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="text-sm">🌾</span> <span className="font-medium">আমার খামার</span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="text-sm">💧</span> <span className="font-medium">পানির উৎস</span>
+          </div>
         </div>
       </div>
 
@@ -926,5 +1259,3 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 })
 
 export default OverviewMap
-
-// pg_dump "postgresql://postgres:GaMiNgNIR58483@db.mktxhuzpnurkxluoiggu.supabase.co:5432/postgres" --schema-only > supabase_schema.sql

@@ -11,17 +11,19 @@ import { useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { OverviewMapHandle, LandPlotOverview, HotspotOverview, CommunitySprayPlot } from './OverviewMap'
 import type { WaterSource } from '@/app/types/water'
+import type { SatelliteWaterData } from '../actions/industrial'
 
 // forwardRef: true removed — invalid in Next.js 13+, refs work automatically
 const OverviewMapDynamic = dynamic(() => import('./OverviewMap'), {
   ssr: false,
   loading: () => (
     <div
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center gap-3"
-      style={{ height: 480 }}
+      className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center gap-3"
+      style={{ height: 'clamp(320px, 50vh, 520px)', minHeight: '320px' }}
     >
-      <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-      <p className="text-xs text-gray-400">জমির ম্যাপ লোড হচ্ছে...</p>
+      <div className="w-8 h-8 border-3 border-green-600 border-t-transparent rounded-full animate-spin" />
+      <p className="text-sm text-gray-500 font-medium">জমির ম্যাপ লোড হচ্ছে...</p>
+      <p className="text-xs text-gray-400">অনুগ্রহ করে অপেক্ষা করুন</p>
     </div>
   ),
 })
@@ -76,6 +78,7 @@ interface Props {
   communitySpray:   CommunitySprayPlot[]
   riskPlots:        RiskPlot[]
   waterSources:     WaterSource[]
+  satelliteData:    SatelliteWaterData[]
 }
 
 export default function LandDigest({
@@ -83,7 +86,7 @@ export default function LandDigest({
   windFromDeg, windSpeedKmh,
   hotspots, plots,
   profileMap, completedLandIds,
-  totalBigha, activeSprays, riskPlots, communitySpray, waterSources,
+  totalBigha, activeSprays, riskPlots, communitySpray, waterSources, satelliteData,
 }: Props) {
   const mapRef = useRef<OverviewMapHandle>(null)
 
@@ -114,6 +117,7 @@ export default function LandDigest({
           plots={plots}
           communitySpray={communitySpray}
           waterSources={waterSources}
+          satelliteData={satelliteData}
         />
       </div>
 

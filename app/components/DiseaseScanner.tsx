@@ -34,7 +34,7 @@ interface DiagnosisResult {
   confidence?: number;
   reasoning_bn: string;
   remedy_bn: string;
-  primary_cause?: "biotic" | "abiotic" | "heavy_metal";
+  primary_cause?: "biotic" | "abiotic" | "heavy_metal" | "unknown";
   secondary_cause?: string | null;
   detection_scores?: {
     biotic?: { percentage: number; disease_name_bn?: string; subtype?: string; disease_id?: string | null };
@@ -74,7 +74,7 @@ interface DiagnoseResponse {
   source?: string;
   context?: DiagnosisContext | null;
   image_url?: string | null;
-  primary_cause?: "biotic" | "abiotic" | "heavy_metal";
+  primary_cause?: "biotic" | "abiotic" | "heavy_metal" | "unknown";
   secondary_cause?: string | null;
   detection_scores?: DiagnosisResult["detection_scores"];
   compound_stress?: DiagnosisResult["compound_stress"];
@@ -426,49 +426,104 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
           {/* ─── Three Detection Scores (Detailed) ────── */}
           {result.detection_scores && (
             <div className="space-y-2">
-              {/* Score overview pills */}
+              {/* Score overview pills - ALWAYS VISIBLE */}
               <div className="grid grid-cols-3 gap-2">
-                <div className={`p-2 rounded-lg text-center border ${
+                {/* Biotic */}
+                <div className={`p-2 rounded-lg text-center border-2 transition-all ${
                   (result.detection_scores.biotic?.percentage ?? 0) >= 35
-                    ? "bg-blue-50 border-blue-200"
+                    ? "bg-blue-50 border-blue-400 shadow-sm"
                     : "bg-gray-50 border-gray-200"
                 }`}>
-                  <div className="text-xs text-gray-500 font-bold">🦠 জৈবিক</div>
-                  <div className={`text-xl font-black ${
+                  <div className="text-xs text-gray-500 font-bold mb-1">🦠 জৈবিক</div>
+                  <div className={`text-2xl font-black leading-none ${
                     (result.detection_scores.biotic?.percentage ?? 0) >= 35
                       ? "text-blue-700" : "text-gray-400"
                   }`}>
                     {result.detection_scores.biotic?.percentage ?? 0}%
                   </div>
+                  {result.detection_scores.biotic?.disease_name_bn && (
+                    <div className="text-xs text-gray-600 mt-1 truncate">
+                      {result.detection_scores.biotic.disease_name_bn}
+                    </div>
+                  )}
                 </div>
 
-                <div className={`p-2 rounded-lg text-center border ${
+                {/* Abiotic */}
+                <div className={`p-2 rounded-lg text-center border-2 transition-all ${
                   (result.detection_scores.abiotic?.percentage ?? 0) >= 35
-                    ? "bg-orange-50 border-orange-200"
+                    ? "bg-orange-50 border-orange-400 shadow-sm"
                     : "bg-gray-50 border-gray-200"
                 }`}>
-                  <div className="text-xs text-gray-500 font-bold">⚗️ দূষণ</div>
-                  <div className={`text-xl font-black ${
+                  <div className="text-xs text-gray-500 font-bold mb-1">⚗️ দূষণ</div>
+                  <div className={`text-2xl font-black leading-none ${
                     (result.detection_scores.abiotic?.percentage ?? 0) >= 35
                       ? "text-orange-700" : "text-gray-400"
                   }`}>
                     {result.detection_scores.abiotic?.percentage ?? 0}%
                   </div>
+                  {result.detection_scores.abiotic?.spray_suppressed && (
+                    <div className="text-xs font-bold text-red-600 mt-1">স্প্রে নিষেধ</div>
+                  )}
                 </div>
 
-                <div className={`p-2 rounded-lg text-center border ${
-                  (result.detection_scores.heavy_metal?.percentage ?? 0) > 0
-                    ? "bg-yellow-50 border-yellow-200"
+                {/* Heavy Metal */}
+                <div className={`p-2 rounded-lg text-center border-2 transition-all ${
+                  (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
+                    ? "bg-yellow-50 border-yellow-400 shadow-sm"
                     : "bg-gray-50 border-gray-200"
                 }`}>
-                  <div className="text-xs text-gray-500 font-bold">⚠️ ধাতু</div>
-                  <div className={`text-xl font-black ${
-                    (result.detection_scores.heavy_metal?.percentage ?? 0) > 0
+                  <div className="text-xs text-gray-500 font-bold mb-1">⚠️ ধাতু</div>
+                  <div className={`text-2xl font-black leading-none ${
+                    (result.detection_scores.heavy_metal?.percentage ?? 0) >= 20
                       ? "text-yellow-700" : "text-gray-400"
                   }`}>
                     {result.detection_scores.heavy_metal?.percentage ?? 0}%
                   </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {result.detection_scores.heavy_metal?.zone_risk ?? 'Low'} zone
+                  </div>
                 </div>
+              </div>
+
+              {/* PRIMARY / SECONDARY LABELS */}
+              <div className="flex gap-2 mt-1 mb-2 flex-wrap">
+                {result.primary_cause && result.primary_cause !== 'unknown' && (
+                  <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full font-bold">
+                    PRIMARY: {result.primary_cause === 'biotic' ? '🦠 জৈবিক'
+                      : result.primary_cause === 'abiotic' ? '⚗️ দূষণ' : '⚠️ ভারী ধাতু'}
+                  </span>
+                )}
+                {result.secondary_cause && (
+                  <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded-full">
+                    SECONDARY: {result.secondary_cause === 'biotic' ? '🦠 জৈবিক'
+                      : result.secondary_cause === 'abiotic' ? '⚗️ দূষণ' : '⚠️ ধাতু'}
+                  </span>
+                )}
+              </div>
+
+              {/* CONFIDENCE BAR */}
+              <div className="mb-2">
+                <div className="flex justify-between text-xs text-gray-500 mb-1">
+                  <span>আত্মবিশ্বাস</span>
+                  <span className="font-bold">
+                    {Math.round((result.confidence ?? 0) * 100)}%
+                  </span>
+                </div>
+                <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (result.confidence ?? 0) >= 0.70 ? 'bg-green-500'
+                      : (result.confidence ?? 0) >= 0.50 ? 'bg-yellow-500'
+                      : 'bg-red-400'
+                    }`}
+                    style={{ width: `${Math.round((result.confidence ?? 0) * 100)}%` }}
+                  />
+                </div>
+                {(result.confidence ?? 0) < 0.50 && (
+                  <p className="text-xs text-red-600 mt-1">
+                    ⚠️ কম আত্মবিশ্বাস — বিশেষজ্ঞের পরামর্শ নিন
+                  </p>
+                )}
               </div>
 
               {/* ── Detailed: Biotic ──────────────────── */}

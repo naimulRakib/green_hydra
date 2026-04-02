@@ -78,7 +78,7 @@ export default async function RootLayout({
         </header>
 
         {/* --- Main Content Area --- */}
-        <main className="flex-grow">
+        <main className="grow">
           {children}
         </main>
 

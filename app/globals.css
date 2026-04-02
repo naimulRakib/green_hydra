@@ -24,3 +24,238 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ══════════════════════════════════════════════════════
+   Leaflet Map Enhancements for AgroSentinel
+   ══════════════════════════════════════════════════════ */
+
+/* Better map container styling */
+.leaflet-container {
+  font-family: inherit;
+  border-radius: 0;
+  z-index: 1;
+}
+
+/* Make popup more readable */
+.leaflet-popup-content-wrapper {
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  padding: 0;
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.leaflet-popup-tip {
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* Better tooltip styling */
+.leaflet-tooltip {
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Improve zoom controls */
+.leaflet-control-zoom {
+  border-radius: 8px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.leaflet-control-zoom a {
+  border-radius: 0 !important;
+  width: 32px !important;
+  height: 32px !important;
+  line-height: 32px !important;
+  font-size: 16px !important;
+}
+
+.leaflet-control-zoom a:first-child {
+  border-radius: 7px 7px 0 0 !important;
+}
+
+.leaflet-control-zoom a:last-child {
+  border-radius: 0 0 7px 7px !important;
+}
+
+/* Attribution styling */
+.leaflet-control-attribution {
+  font-size: 9px;
+  background: rgba(255, 255, 255, 0.8);
+  padding: 2px 6px;
+  border-radius: 4px 0 0 0;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .leaflet-popup-content {
+    font-size: 12px;
+    max-width: 260px;
+  }
+
+  .leaflet-control-zoom a {
+    width: 36px !important;
+    height: 36px !important;
+    line-height: 36px !important;
+  }
+
+  .leaflet-control-attribution {
+    font-size: 8px;
+  }
+}
+
+/* Pulsing animation for markers */
+@keyframes map-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  70% { box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+/* Farm marker pulse effect */
+.farm-marker-pulse {
+  animation: map-pulse 2s infinite;
+}
+
+/* Factory warning pulse */
+@keyframes factory-warning {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+.factory-warning-pulse {
+  animation: factory-warning 1.5s ease-in-out infinite;
+}
+
+/* ══════════════════════════════════════════════════════
+   Wind Plume Enhanced Visibility
+   ══════════════════════════════════════════════════════ */
+
+/* Plume pulsating animation for active pollution */
+@keyframes plume-pulse {
+  0%, 100% {
+    opacity: 1;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.85;
+    filter: brightness(1.1);
+  }
+}
+
+/* Plume edge glow effect */
+@keyframes plume-glow {
+  0%, 100% {
+    stroke-opacity: 0.6;
+    stroke-width: 2;
+  }
+  50% {
+    stroke-opacity: 0.9;
+    stroke-width: 3;
+  }
+}
+
+/* Wind direction arrow rotation */
+@keyframes wind-arrow-pulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.3));
+  }
+  50% {
+    transform: scale(1.05);
+    filter: drop-shadow(0 4px 8px rgba(59, 130, 246, 0.5));
+  }
+}
+
+/* Satellite marker attention pulse */
+@keyframes satellite-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7);
+  }
+  70% {
+    box-shadow: 0 0 0 20px rgba(139, 92, 246, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
+  }
+}
+
+.satellite-marker-pulse {
+  animation: satellite-pulse 2.5s infinite;
+}
+
+/* Pollution warning ring */
+@keyframes pollution-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
+  }
+  70% {
+    box-shadow: 0 0 0 25px rgba(239, 68, 68, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+  }
+}
+
+.pollution-warning-pulse {
+  animation: pollution-ring 2s infinite;
+}
+
+/* Leaflet polygon enhancement for wind plumes */
+.leaflet-interactive {
+  transition: opacity 0.3s ease, fill-opacity 0.3s ease;
+}
+
+.leaflet-interactive:hover {
+  opacity: 0.95 !important;
+  stroke-width: 5 !important;
+}
+
+/* Enhanced plume visibility classes */
+.danger-plume {
+  animation: plume-pulse 2s ease-in-out infinite;
+  filter: drop-shadow(0 2px 8px rgba(239, 68, 68, 0.3));
+}
+
+.danger-plume path {
+  stroke-dasharray: none !important;
+  stroke: rgba(239, 68, 68, 0.8) !important;
+  stroke-width: 3 !important;
+  fill: rgba(239, 68, 68, 0.45) !important;
+}
+
+.safe-plume {
+  opacity: 0.7;
+  filter: drop-shadow(0 1px 4px rgba(148, 163, 184, 0.2));
+}
+
+.safe-plume path {
+  stroke: rgba(148, 163, 184, 0.6) !important;
+  stroke-width: 1.5 !important;
+  stroke-dasharray: 6 6 !important;
+  fill: rgba(148, 163, 184, 0.15) !important;
+}
+
+/* Critical danger plume extra effects */
+.critical-plume {
+  animation: plume-pulse 1.5s ease-in-out infinite, plume-glow 2s ease-in-out infinite;
+  filter: drop-shadow(0 4px 12px rgba(220, 38, 38, 0.4));
+}
+
+.critical-plume path {
+  stroke: rgba(220, 38, 38, 0.9) !important;
+  stroke-width: 4 !important;
+  fill: rgba(220, 38, 38, 0.5) !important;
+}
+
+/* Wind arrow enhancements */
+.leaflet-marker-icon .wind-arrow {
+  animation: wind-arrow-pulse 3s ease-in-out infinite;
+}

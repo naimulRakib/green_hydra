@@ -7,10 +7,14 @@ import type { SatelliteWaterData } from '../actions/industrial'
 const LeafletMap = dynamic(() => import('./LeafletMapInner'), {
   ssr: false,
   loading: () => (
-    <div style={{ height: 420 }} className="w-full bg-gray-50 flex items-center justify-center">
+    <div
+      className="w-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center"
+      style={{ height: 'clamp(350px, 45vh, 480px)', minHeight: '350px' }}
+    >
       <div className="flex flex-col items-center gap-3">
-        <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-        <p className="text-xs text-gray-400">ম্যাপ লোড হচ্ছে...</p>
+        <div className="w-10 h-10 border-3 border-green-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-500 font-medium">ম্যাপ লোড হচ্ছে...</p>
+        <p className="text-xs text-gray-400">অনুগ্রহ করে অপেক্ষা করুন</p>
       </div>
     </div>
   ),
@@ -66,35 +70,37 @@ export default function ImpactMap({ hotspots, satelliteData = [], farmerLat, far
   )
 
   const inPlume = useMemo(() => validHotspots.filter(h => h.is_in_plume), [validHotspots])
+  const windToDeg = (windFromDeg + 180) % 360
   const windCardinal = (() => {
     const dirs = ['উত্তর','উ-পূ','পূর্ব','দ-পূ','দক্ষিণ','দ-প','পশ্চিম','উ-প']
-    return dirs[Math.round(windFromDeg / 45) % 8]
+    return dirs[Math.round(windToDeg / 45) % 8]
   })()
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
       {/* Header */}
-      <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+      <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
         <div>
-          <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full flex-shrink-0 ${inPlume.length > 0 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
+          <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${inPlume.length > 0 ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
             ইন্ডাস্ট্রিয়াল রিস্ক ম্যাপ
-            <span className="text-xs font-normal text-gray-400 ml-1">· ১৫ কিমি ব্যাসার্ধ</span>
+            <span className="text-xs font-normal text-gray-400 ml-1 hidden sm:inline">· ১৫ কিমি ব্যাসার্ধ</span>
           </h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            আপনার অবস্থান: {farmerLat.toFixed(4)}, {farmerLng.toFixed(4)} · বাতাস {windCardinal}মুখী ({windFromDeg}°)
-            {windSpeedKmh < 2 ? ' · শান্ত — সব দিকে দূষণ ছড়াচ্ছে' : ` · ${windSpeedKmh} km/h`}
+          <p className="text-xs text-gray-500 mt-0.5">
+            <span className="hidden sm:inline">অবস্থান: {farmerLat.toFixed(4)}, {farmerLng.toFixed(4)} · </span>
+            বাতাস {windCardinal}মুখী ({windToDeg}°)
+            {windSpeedKmh < 2 ? ' · শান্ত' : ` · ${windSpeedKmh} km/h`}
           </p>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap justify-end">
           {inPlume.length > 0 && (
-            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
-              {inPlume.length} সক্রিয় প্লাম
+            <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-red-50 text-red-600 border border-red-200 shadow-sm">
+              ⚠️ {inPlume.length} সক্রিয় প্লাম
             </span>
           )}
-          <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-            {validHotspots.length} কারখানা
+          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+            🏭 {validHotspots.length}
           </span>
         </div>
       </div>
@@ -110,30 +116,34 @@ export default function ImpactMap({ hotspots, satelliteData = [], farmerLat, far
       />
 
       {/* Legend */}
-      <div className="px-4 py-2.5 border-t border-gray-100 flex items-center gap-4 bg-gray-50 flex-wrap">
-        <span className="text-xs text-gray-400 font-medium">লেজেন্ড:</span>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <div className="w-3 h-3 rounded-sm bg-red-500 opacity-70" />
-          ধোঁয়া আসছে
+      <div className="px-4 py-3 border-t border-gray-100 bg-gradient-to-r from-gray-50 to-white">
+        <div className="flex items-center gap-2 mb-2">
+          <span className="text-xs font-semibold text-gray-600 bg-white px-2 py-0.5 rounded border border-gray-200">🗺️ লেজেন্ড</span>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <div className="w-3 h-3 rounded-sm bg-gray-400 opacity-40 border border-dashed border-gray-400" />
-          নিরাপদ বায়ু
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-blue-600">
-          <div className="w-3 h-3 rounded-[3px] bg-blue-500/30 border border-blue-500" />
-          পানির গুণমান (স্যাটেলাইট)
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-red-600">
-          <div className="w-3 h-3 rounded-[3px] bg-red-500/30 border border-red-500" />
-          সন্দেহজনক দূষণ
-        </div>
-        <div className="flex w-full items-center gap-4 mt-1 border-t border-gray-200/50 pt-2 pb-1">
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <span>🌾</span> আপনার খামার
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <div className="flex items-center gap-1.5 text-xs text-gray-600 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 shadow-sm">
+            <div className="w-3 h-3 rounded-full bg-red-500" />
+            <span className="font-medium">ধোঁয়া আসছে</span>
           </div>
-          <div className="flex items-center gap-1.5 text-xs text-gray-500">
-            <span>🏭</span> কারখানা
+          <div className="flex items-center gap-1.5 text-xs text-gray-600 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 shadow-sm">
+            <div className="w-3 h-3 rounded-full bg-gray-400 border border-dashed border-gray-500" />
+            <span className="font-medium">নিরাপদ বায়ু</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-blue-600 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 shadow-sm">
+            <div className="w-3 h-3 rounded-full bg-blue-500/40 border border-blue-500" />
+            <span className="font-medium">পানি (স্যাটেলাইট)</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-xs text-red-600 bg-white rounded-lg px-2.5 py-1.5 border border-gray-100 shadow-sm">
+            <div className="w-3 h-3 rounded-full bg-red-500/40 border border-red-500" />
+            <span className="font-medium">সন্দেহজনক দূষণ</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-4 mt-2 pt-2 border-t border-gray-100">
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="text-sm">🌾</span> <span className="font-medium">আমার খামার</span>
+          </div>
+          <div className="flex items-center gap-1 text-xs text-gray-500">
+            <span className="text-sm">🏭</span> <span className="font-medium">কারখানা</span>
           </div>
         </div>
       </div>

@@ -120,7 +120,7 @@ function BreakdownBar({ label, value }: { label: string; value: number }) {
   const color = value >= 70 ? '#ef4444' : value >= 40 ? '#f59e0b' : '#22c55e'
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-gray-500 w-20 flex-shrink-0">{label}</span>
+      <span className="text-xs text-gray-500 w-20 shrink-0">{label}</span>
       <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
         <div
           className="h-full rounded-full transition-all duration-700"

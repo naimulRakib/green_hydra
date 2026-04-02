@@ -13,11 +13,12 @@ const ImpactMapDynamic = dynamic(() => import('./ImpactMap'), {
   ssr: false,
   loading: () => (
     <div
-      className="bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center gap-3"
-      style={{ height: 480 }}
+      className="bg-white rounded-2xl border border-gray-100 shadow-sm flex flex-col items-center justify-center gap-3"
+      style={{ height: 'clamp(400px, 50vh, 560px)', minHeight: '400px' }}
     >
-      <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin" />
-      <p className="text-xs text-gray-400">দূষণ ম্যাপ লোড হচ্ছে...</p>
+      <div className="w-10 h-10 border-3 border-orange-500 border-t-transparent rounded-full animate-spin" />
+      <p className="text-sm text-gray-500 font-medium">দূষণ ম্যাপ লোড হচ্ছে...</p>
+      <p className="text-xs text-gray-400">কারখানা ও প্লাম তথ্য আনা হচ্ছে</p>
     </div>
   ),
 })

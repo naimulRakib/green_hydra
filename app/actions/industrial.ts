@@ -32,6 +32,170 @@ type HazardRow = {
   remedy_id?:        string | null
 }
 
+type FallbackHazardRow = {
+  hotspot_id:        string
+  factory_name:      string | null
+  factory_name_bn:   string | null
+  industry_type:     string | null
+  factory_lat:       number | null
+  factory_lng:       number | null
+  distance_km:       number | null
+  max_plume_km:      number | null
+  plume_cone_deg:    number | null
+  wind_to_deg:       number | null
+  is_in_plume:       boolean | null
+  primary_pollutant: string | null
+  risk_level:        string | null
+  remedy_id?:        string | null
+}
+
+type HotspotTableRow = {
+  id: string
+  factory_name?: string | null
+  factory_name_bn: string | null
+  industry_type: string | null
+  max_plume_km: number | null
+  plume_cone_deg: number | null
+  primary_pollutant?: string | null
+  is_currently_active: boolean | null
+  location: unknown
+}
+
+function toRad(deg: number): number {
+  return (deg * Math.PI) / 180
+}
+
+function toDeg(rad: number): number {
+  return (rad * 180) / Math.PI
+}
+
+function distanceKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const earthR = 6371
+  const dLat = toRad(lat2 - lat1)
+  const dLng = toRad(lng2 - lng1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2
+  return earthR * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+}
+
+function bearingDeg(fromLat: number, fromLng: number, toLat: number, toLng: number): number {
+  const phi1 = toRad(fromLat)
+  const phi2 = toRad(toLat)
+  const dLam = toRad(toLng - fromLng)
+  const y = Math.sin(dLam) * Math.cos(phi2)
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLam)
+  return (toDeg(Math.atan2(y, x)) + 360) % 360
+}
+
+function angleDiffDeg(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360
+  return d > 180 ? 360 - d : d
+}
+
+function riskFromDistance(distance: number, inPlume: boolean): string {
+  if (!inPlume) return 'Low'
+  if (distance <= 1.0) return 'Critical'
+  if (distance <= 3.0) return 'High'
+  return 'Moderate'
+}
+
+function parseLocationToLatLng(location: unknown): { lat: number; lng: number } | null {
+  if (!location) return null
+
+  if (typeof location === 'string') {
+    // Handles both "POINT(lng lat)" and "SRID=4326;POINT(lng lat)"
+    const pointMatch = location.match(/POINT\s*\(\s*([-\d.]+)\s+([-\d.]+)\s*\)/i)
+    if (!pointMatch) return null
+    const lng = Number(pointMatch[1])
+    const lat = Number(pointMatch[2])
+    if (!isFinite(lat) || !isFinite(lng)) return null
+    return { lat, lng }
+  }
+
+  if (typeof location === 'object') {
+    const rec = location as Record<string, unknown>
+    const coordinates = rec.coordinates
+    if (Array.isArray(coordinates) && coordinates.length >= 2) {
+      const lng = Number(coordinates[0])
+      const lat = Number(coordinates[1])
+      if (!isFinite(lat) || !isFinite(lng)) return null
+      return { lat, lng }
+    }
+  }
+
+  return null
+}
+
+function toHotspots(rows: FallbackHazardRow[], windFromDeg: number): Hotspot[] {
+  return rows
+    .filter(row =>
+      typeof row.factory_lat === 'number' && isFinite(row.factory_lat) &&
+      typeof row.factory_lng === 'number' && isFinite(row.factory_lng)
+    )
+    .map(row => ({
+      hotspot_id:        row.hotspot_id,
+      factory_name:      row.factory_name ?? row.factory_name_bn ?? 'Unknown',
+      factory_name_bn:   row.factory_name_bn ?? row.factory_name ?? 'Unknown',
+      industry_type:     row.industry_type ?? 'Unknown',
+      factory_lat:       row.factory_lat as number,
+      factory_lng:       row.factory_lng as number,
+      distance_km:       row.distance_km ?? 0,
+      max_plume_km:      row.max_plume_km ?? 5,
+      plume_cone_deg:    row.plume_cone_deg ?? 90,
+      wind_to_deg:       row.wind_to_deg ?? ((windFromDeg + 180) % 360),
+      is_in_plume:       Boolean(row.is_in_plume),
+      primary_pollutant: row.primary_pollutant ?? 'Unknown',
+      risk_level:        row.risk_level ?? 'Low',
+      remedy_id:         row.remedy_id ?? null,
+    }))
+}
+
+function tableRowsToHotspots(
+  rows: HotspotTableRow[],
+  farmerLat: number,
+  farmerLng: number,
+  windFromDeg: number,
+  windSpeedKmh: number,
+): Hotspot[] {
+  const windToDeg = (windFromDeg + 180) % 360
+
+  const hotspots: Hotspot[] = []
+
+  for (const row of rows) {
+    if (row.is_currently_active === false) continue
+
+    const coords = parseLocationToLatLng(row.location)
+    if (!coords) continue
+
+    const distance = distanceKm(coords.lat, coords.lng, farmerLat, farmerLng)
+    const maxPlume = row.max_plume_km ?? 5
+    const coneDeg = row.plume_cone_deg ?? 90
+    const bearing = bearingDeg(coords.lat, coords.lng, farmerLat, farmerLng)
+    const inCone = angleDiffDeg(windToDeg, bearing) <= (coneDeg / 2)
+    const isInPlume = windSpeedKmh >= 1 && distance <= maxPlume && inCone
+
+    hotspots.push({
+      hotspot_id: row.id,
+      factory_name: row.factory_name ?? row.factory_name_bn ?? 'Unknown',
+      factory_name_bn: row.factory_name_bn ?? row.factory_name ?? 'Unknown',
+      industry_type: row.industry_type ?? 'Unknown',
+      factory_lat: coords.lat,
+      factory_lng: coords.lng,
+      distance_km: Number(distance.toFixed(2)),
+      max_plume_km: maxPlume,
+      plume_cone_deg: coneDeg,
+      wind_to_deg: windToDeg,
+      is_in_plume: isInPlume,
+      primary_pollutant: row.primary_pollutant ?? 'Unknown',
+      risk_level: riskFromDistance(distance, isInPlume),
+      remedy_id: null,
+    })
+  }
+
+  return hotspots
+}
+
 export async function getHotspotsWithPlume(
   farmerLat:    number,
   farmerLng:    number,
@@ -54,34 +218,64 @@ export async function getHotspotsWithPlume(
 
   if (error) {
     console.error('[Industrial] check_pollution_hazards error:', error.message)
-    return []
+
+    // Fallback path: keep overview factories visible even if main RPC is broken
+    // by DB drift (e.g. renamed/missing column).
+    const { data: fallbackData, error: fallbackError } = await supabase.rpc('get_hotspots_for_overview', {
+      p_farmer_lat: farmerLat,
+      p_farmer_lng: farmerLng,
+      p_wind_from_deg: windFromDeg,
+      p_wind_speed_kmh: windSpeedKmh,
+    })
+
+    if (fallbackError) {
+      console.error('[Industrial] get_hotspots_for_overview fallback error:', fallbackError.message)
+
+      // Final fallback: compute plume status in app from industrial_hotspots
+      // so overview still renders factories when DB functions are out of sync.
+      const withPollutant = await supabase
+        .from('industrial_hotspots')
+        .select('id, factory_name, factory_name_bn, industry_type, max_plume_km, plume_cone_deg, primary_pollutant, is_currently_active, location')
+        .eq('is_currently_active', true)
+
+      let tableRows: HotspotTableRow[] | null = null
+
+      if (withPollutant.error) {
+        console.error('[Industrial] industrial_hotspots read (with primary_pollutant) error:', withPollutant.error.message)
+
+        const withPollutantId = await supabase
+          .from('industrial_hotspots')
+          .select('id, factory_name, factory_name_bn, industry_type, max_plume_km, plume_cone_deg, primary_pollutant:primary_pollutant_id, is_currently_active, location')
+          .eq('is_currently_active', true)
+
+        if (withPollutantId.error) {
+          console.error('[Industrial] industrial_hotspots read (with primary_pollutant_id) error:', withPollutantId.error.message)
+          const withoutPollutant = await supabase
+            .from('industrial_hotspots')
+            .select('id, factory_name, factory_name_bn, industry_type, max_plume_km, plume_cone_deg, is_currently_active, location')
+            .eq('is_currently_active', true)
+
+          if (withoutPollutant.error) {
+            console.error('[Industrial] industrial_hotspots read fallback error:', withoutPollutant.error.message)
+            return []
+          }
+          tableRows = (withoutPollutant.data ?? []) as HotspotTableRow[]
+        } else {
+          tableRows = (withPollutantId.data ?? []) as HotspotTableRow[]
+        }
+      } else {
+        tableRows = (withPollutant.data ?? []) as HotspotTableRow[]
+      }
+
+      return tableRowsToHotspots(tableRows, farmerLat, farmerLng, windFromDeg, windSpeedKmh)
+    }
+
+    return toHotspots((fallbackData ?? []) as FallbackHazardRow[], windFromDeg)
   }
 
   if (!data || data.length === 0) return []
 
-  const rows = (data ?? []) as HazardRow[]
-  return rows
-    // Guard: skip rows with missing or invalid coords
-    .filter(row =>
-      typeof row.factory_lat === 'number' && isFinite(row.factory_lat) &&
-      typeof row.factory_lng === 'number' && isFinite(row.factory_lng)
-    )
-    .map(row => ({
-      hotspot_id:        row.hotspot_id,
-      factory_name:      row.factory_name,
-      factory_name_bn:   row.factory_name_bn,
-      industry_type:     row.industry_type,
-      factory_lat:       row.factory_lat,
-      factory_lng:       row.factory_lng,
-      distance_km:       row.distance_km,
-      max_plume_km:      row.max_plume_km,
-      plume_cone_deg:    row.plume_cone_deg,
-      wind_to_deg:       row.wind_to_deg,
-      is_in_plume:       row.is_in_plume,
-      primary_pollutant: row.primary_pollutant,
-      risk_level:        row.risk_level,
-      remedy_id:         row.remedy_id ?? null,
-    }))
+  return toHotspots((data ?? []) as HazardRow[], windFromDeg)
 }
 
 // Neighbour spray risk measured from own land boundaries (PostGIS polygon edge
