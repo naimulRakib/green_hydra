@@ -22,8 +22,8 @@ AI component accuracy: **82.4%** (Custom Bangladesh Test Set + Gemini Vision ben
 
 ### Module A — Biotic Detection
 - Tests: 2/2
-- Test 2 (Biotic runs when clean): ✅
-- Test 7 (Mimic pollution cap): ✅
+- Test 2 (Biotic runs when clean): 
+- Test 7 (Mimic pollution cap): 
 - **Key finding:** LLM biotic detection works consistently when abiotic score < 0.60. Precision peaks at 82.4% on verified PlantVillage/Local datasets.
 
 ### Module B — Abiotic Detection

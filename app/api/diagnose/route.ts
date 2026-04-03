@@ -314,6 +314,8 @@ function enforceHardOverrides(
     }
     verdict.spray_suppressed = true;
     overrides.push("SPRAY_SUPPRESSED_abiotic>=0.60");
+    // verdict.spray_suppressed = true;
+    // overrides.push("SPRAY_SUPPRESSED_abiotic>=0.60");
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -1947,10 +1949,10 @@ export async function POST(req: Request) {
     // 🚀 DEMO HACK: Force Plume Score for Presentation
     // ==========================================
     const profile = profileRes.data;
-    if (profile?.smoke_exposure === true) {
-      plumeExposure.plumeScore = 0.45; // Force high plume score for demo
-      log(scanId, "🔥", `DEMO OVERRIDE: Forced plume score to 0.45 (smoke_exposure=true)`);
-    }
+    // if (profile?.smoke_exposure === true) {
+    //   plumeExposure.plumeScore = 0.45; // Force high plume score for demo
+    //   log(scanId, "🔥", `DEMO OVERRIDE: Forced plume score to 0.45 (smoke_exposure=true)`);
+    // }
 
     log(scanId, "✅", `Plume exposure done (${Date.now() - T.plume}ms)`, {
       exposureHours: plumeExposure.exposureHours,
