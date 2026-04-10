@@ -27,5 +27,22 @@ export async function saveFarmerLocation(lat: number, lng: number, zoneId: strin
     throw new Error('লোকেশন সেভ করতে সমস্যা হয়েছে')
   }
 
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: user.id,
+        zone_id: zoneId,
+        latitude: lat,
+        longitude: lng,
+        location_source: 'onboarding_gps',
+      },
+      { onConflict: 'id' },
+    )
+
+  if (profileError) {
+    console.error('[Onboarding] Profile location save error:', profileError.message, '| user:', user.id)
+  }
+
   redirect('/dashboard')
 }

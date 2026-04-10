@@ -66,7 +66,7 @@ export async function login(formData: FormData) {
     return redirect('/login?error=' + encodeURIComponent('ইমেইল ও পাসওয়ার্ড দিন'))
   }
 
-  const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const { data: signInData, error } = await supabase.auth.signInWithPassword({ email, password })
 
   if (error) {
     console.error('[Auth] Login error:', error.message)
@@ -74,6 +74,38 @@ export async function login(formData: FormData) {
       ? 'ইমেইল বা পাসওয়ার্ড ভুল হয়েছে'
       : 'লগইন করতে সমস্যা হয়েছে'
     return redirect('/login?error=' + encodeURIComponent(msg))
+  }
+
+  const userId = signInData.user?.id
+  if (userId) {
+    const defaultLatitude = 23.8103
+    const defaultLongitude = 90.3563
+
+    const { data: profile, error: profileReadError } = await supabase
+      .from('profiles')
+      .select('latitude,longitude')
+      .eq('id', userId)
+      .maybeSingle()
+
+    if (profileReadError) {
+      console.error('[Auth] Profile read error during login:', profileReadError.message, '| user:', userId)
+    } else if (!profile || profile.latitude == null || profile.longitude == null) {
+      const { error: profileUpsertError } = await supabase
+        .from('profiles')
+        .upsert(
+          {
+            id: userId,
+            latitude: defaultLatitude,
+            longitude: defaultLongitude,
+            location_source: 'login_default',
+          },
+          { onConflict: 'id' },
+        )
+
+      if (profileUpsertError) {
+        console.error('[Auth] Profile location upsert error during login:', profileUpsertError.message, '| user:', userId)
+      }
+    }
   }
 
   redirect('/dashboard')

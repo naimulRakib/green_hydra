@@ -440,11 +440,20 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   const waitForMap = useCallback((): Promise<LeafletMapLike> => {
     return new Promise((resolve, reject) => {
       const cur = mapRef.current;
-      if (cur) { resolve(cur); return; }
+      const curContainer = cur?.getContainer?.();
+      if (cur && curContainer && curContainer.isConnected) {
+        resolve(cur);
+        return;
+      }
       let attempts = 0;
       const id = setInterval(() => {
         const m = mapRef.current;
-        if (m) { clearInterval(id); resolve(m); return; }
+        const container = m?.getContainer?.();
+        if (m && container && container.isConnected) {
+          clearInterval(id);
+          resolve(m);
+          return;
+        }
         if (++attempts > 30) { clearInterval(id); reject(new Error("map not ready")); }
       }, 100);
     });
@@ -465,6 +474,12 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       map = await waitForMap();
     } catch {
       return; // timed out — give up silently
+    }
+
+    const activeContainer = map.getContainer?.();
+    if (!activeContainer || !activeContainer.isConnected) {
+      setError("মানচিত্র প্রস্তুত নয়, আবার চেষ্টা করুন।");
+      return;
     }
 
     // Re-check L after async in case it changed
@@ -575,8 +590,10 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
     const newCoords = drawRef.current.coords.slice(0, -1);
     if (polylineRef.current) { try { mapRef.current?.removeLayer(polylineRef.current); } catch {} polylineRef.current = null; }
     if (polygonRef.current)  { try { mapRef.current?.removeLayer(polygonRef.current);  } catch {} polygonRef.current  = null; }
-    if (newCoords.length > 1)  polylineRef.current = L.polyline(newCoords,  { color: "#f59e0b", weight: 2, dashArray: "6 4" }).addTo(mapRef.current ?? undefined);
-    if (newCoords.length >= 3) polygonRef.current  = L.polygon(newCoords,   { color: "#f59e0b", fillColor: "#fbbf24", fillOpacity: 0.2, weight: 2, dashArray: "6 4" }).addTo(mapRef.current ?? undefined);
+    const map = mapRef.current;
+    if (!map) return;
+    if (newCoords.length > 1)  polylineRef.current = L.polyline(newCoords,  { color: "#f59e0b", weight: 2, dashArray: "6 4" }).addTo(map);
+    if (newCoords.length >= 3) polygonRef.current  = L.polygon(newCoords,   { color: "#f59e0b", fillColor: "#fbbf24", fillOpacity: 0.2, weight: 2, dashArray: "6 4" }).addTo(map);
     const next: DrawState = { active: true, coords: newCoords, areaM2: calcAreaM2(newCoords) };
     drawRef.current = next; setDraw(next);
   }

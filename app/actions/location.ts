@@ -32,6 +32,23 @@ export async function updateLocationManual(lat: number, lng: number, zoneId: str
     throw new Error('লোকেশন আপডেট করতে সমস্যা হয়েছে')
   }
 
+  const { error: profileError } = await supabase
+    .from('profiles')
+    .upsert(
+      {
+        id: user.id,
+        zone_id: zoneId,
+        latitude: lat,
+        longitude: lng,
+        location_source: 'manual_dashboard',
+      },
+      { onConflict: 'id' },
+    )
+
+  if (profileError) {
+    console.error('[Location] Profile update error:', profileError.message, '| user:', user.id)
+  }
+
   revalidatePath('/dashboard')
   return { success: true, zoneId }
 }
