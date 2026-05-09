@@ -550,4 +550,4 @@ Proprietary. All rights reserved.
 
 Developed by Team **Green Human** — Bangladesh University of Engineering and Technology (BUET).
 
-Submitted to WICE (World Invention Competition and Exhibition), Edupro Global Green Talent Awards 2026 at University of Leeds, HackNSU Season 6, and Impact Dhaka — AI for Urban Transformation.
+*NAIMUL ISLAM*
