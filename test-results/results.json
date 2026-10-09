@@ -1,0 +1,79 @@
+{
+  "config": {
+    "configFile": "/Users/naimulislam/Desktop/Lightborn/greenHydra/agro-sentinel/playwright.config.ts",
+    "rootDir": "/Users/naimulislam/Desktop/Lightborn/greenHydra/agro-sentinel/__tests__/e2e",
+    "forbidOnly": false,
+    "fullyParallel": true,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 0
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/naimulislam/Desktop/Lightborn/greenHydra/agro-sentinel/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 0
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/Users/naimulislam/Desktop/Lightborn/greenHydra/agro-sentinel/__tests__/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "html",
+        null
+      ],
+      [
+        "json",
+        {
+          "outputFile": "test-results/results.json"
+        }
+      ],
+      [
+        "list",
+        null
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 5,
+    "webServer": {
+      "command": "npm run dev",
+      "url": "http://localhost:3000",
+      "reuseExistingServer": true,
+      "timeout": 120000
+    }
+  },
+  "suites": [],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-09T10:07:50.883Z",
+    "duration": 140.56099999999998,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}
