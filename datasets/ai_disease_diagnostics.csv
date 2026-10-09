@@ -1,0 +1,51 @@
+scan_id,timestamp,location,crop_type,ai_model,detected_stress_type,disease_name,confidence_score,spray_suppressed,rag_cases_matched,verified_by_agronomist
+SCAN-2001,2026-09-2T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.855,FALSE,2,TRUE
+SCAN-2002,2026-09-3T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.964,TRUE,1,TRUE
+SCAN-2003,2026-09-4T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.874,FALSE,1,TRUE
+SCAN-2004,2026-09-5T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.852,FALSE,1,TRUE
+SCAN-2005,2026-09-6T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.908,FALSE,2,TRUE
+SCAN-2006,2026-09-7T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.872,FALSE,2,TRUE
+SCAN-2007,2026-09-8T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.901,TRUE,2,TRUE
+SCAN-2008,2026-09-9T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.964,FALSE,1,TRUE
+SCAN-2009,2026-09-10T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.977,TRUE,1,TRUE
+SCAN-2010,2026-09-11T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.944,TRUE,0,TRUE
+SCAN-2011,2026-09-12T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.911,FALSE,2,TRUE
+SCAN-2012,2026-09-13T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.952,FALSE,3,TRUE
+SCAN-2013,2026-09-14T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.876,FALSE,4,TRUE
+SCAN-2014,2026-09-15T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.920,TRUE,1,TRUE
+SCAN-2015,2026-09-16T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.936,FALSE,3,TRUE
+SCAN-2016,2026-09-17T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.896,FALSE,3,TRUE
+SCAN-2017,2026-09-18T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.868,TRUE,3,TRUE
+SCAN-2018,2026-09-19T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.926,TRUE,0,TRUE
+SCAN-2019,2026-09-20T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.945,FALSE,1,TRUE
+SCAN-2020,2026-09-21T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.969,TRUE,2,TRUE
+SCAN-2021,2026-09-22T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.980,FALSE,1,TRUE
+SCAN-2022,2026-09-23T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.917,FALSE,4,TRUE
+SCAN-2023,2026-09-24T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.959,TRUE,2,TRUE
+SCAN-2024,2026-09-25T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.907,FALSE,1,TRUE
+SCAN-2025,2026-09-26T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.904,TRUE,1,TRUE
+SCAN-2026,2026-09-27T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.878,FALSE,4,TRUE
+SCAN-2027,2026-09-28T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.871,TRUE,1,TRUE
+SCAN-2028,2026-09-29T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.961,FALSE,1,TRUE
+SCAN-2029,2026-09-30T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.970,FALSE,3,TRUE
+SCAN-2030,2026-09-1T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.858,FALSE,1,TRUE
+SCAN-2031,2026-09-2T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.983,FALSE,2,TRUE
+SCAN-2032,2026-09-3T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.935,TRUE,4,TRUE
+SCAN-2033,2026-09-4T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.982,FALSE,2,TRUE
+SCAN-2034,2026-09-5T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.883,FALSE,2,TRUE
+SCAN-2035,2026-09-6T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.900,FALSE,1,TRUE
+SCAN-2036,2026-09-7T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.967,FALSE,0,TRUE
+SCAN-2037,2026-09-8T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.861,FALSE,2,TRUE
+SCAN-2038,2026-09-9T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.885,FALSE,1,TRUE
+SCAN-2039,2026-09-10T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.968,FALSE,1,TRUE
+SCAN-2040,2026-09-11T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.904,FALSE,1,TRUE
+SCAN-2041,2026-09-12T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.937,TRUE,4,TRUE
+SCAN-2042,2026-09-13T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.871,FALSE,1,TRUE
+SCAN-2043,2026-09-14T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.854,TRUE,0,TRUE
+SCAN-2044,2026-09-15T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.982,FALSE,2,TRUE
+SCAN-2045,2026-09-16T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Abiotic_Pollution,Heavy Metal Toxicity,0.959,TRUE,0,TRUE
+SCAN-2046,2026-09-17T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.902,FALSE,0,TRUE
+SCAN-2047,2026-09-18T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.973,FALSE,1,TRUE
+SCAN-2048,2026-09-19T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Pest,Stem Borer,0.945,FALSE,2,TRUE
+SCAN-2049,2026-09-20T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.955,FALSE,1,TRUE
+SCAN-2050,2026-09-21T10:15:00Z,Savar,Boro Rice,gemini-3.1-flash-lite,Biotic_Fungal,Blast Disease,0.858,FALSE,4,TRUE

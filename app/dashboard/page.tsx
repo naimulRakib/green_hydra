@@ -415,51 +415,44 @@ export default async function DashboardPage({
   const riskPlots    = rawPlots.filter((p) => p.risk_level !== 'green' && p.spray_active)
 
   return (
-    <div className="min-h-[calc(100vh-56px)] bg-[#f7f9f5]">
+    <div style={{ minHeight: 'calc(100vh - 132px)', background: 'var(--bg)' }}>
 
-      {/* ── Sticky sub-header ─────────────────────────────── */}
-      <div className="bg-white border-b border-gray-100 shadow-sm sticky top-14 z-30">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between py-3 gap-3 flex-wrap">
+      {/* ── Dashboard Sub-Header ──────────────────────────── */}
+      <div style={{ background: '#fff', borderBottom: '2px solid var(--border)', position: 'sticky', top: '88px', zIndex: 30 }}>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '0 24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '14px', paddingBottom: '0', gap: '16px', flexWrap: 'wrap' }}>
             <div>
-              <div className="flex items-center gap-2 mb-0.5">
-                <h1 className="text-base font-bold text-gray-900">খামার ড্যাশবোর্ড</h1>
-                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${badgeClass}`}>{badge}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+                <h1 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>Farmer Dashboard</h1>
+                <span className={`stat-badge stat-badge-neutral`}>{badge}</span>
                 {!weeklyComplete && rawPlots.length > 0 && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                    ⚠️ সাপ্তাহিক সার্ভে বাকি
-                  </span>
+                  <span className="stat-badge stat-badge-warn">Survey Pending</span>
                 )}
                 {weeklyComplete && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-                    ✓ সার্ভে সম্পন্ন
-                  </span>
+                  <span className="stat-badge stat-badge-safe">Survey Complete</span>
                 )}
               </div>
-              <p className="text-xs text-gray-400">
-                {lastUpdated ? `আবহাওয়া: ${lastUpdated}` : 'আবহাওয়া নেই'}
-                {farmer?.total_scans !== undefined && <span className="ml-2">· স্ক্যান: {farmer.total_scans}</span>}
-                {rawPlots.length > 0 && <span className="ml-2">· জমি: {rawPlots.length}টি ({totalBigha.toFixed(2)} বিঘা)</span>}
+              <p style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                {lastUpdated ? `Weather data: ${lastUpdated}` : 'No weather data'}
+                {farmer?.total_scans !== undefined && <span style={{ marginLeft: '12px' }}>Scans: {farmer.total_scans}</span>}
+                {rawPlots.length > 0 && <span style={{ marginLeft: '12px' }}>Plots: {rawPlots.length} ({totalBigha.toFixed(2)} bigha)</span>}
               </p>
               <ConsentToggle farmerId={user.id} initialConsent={farmer?.data_sharing_consent} />
             </div>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               {coords ? (
                 <RefreshWeatherButton
                   action={fetchAndSaveWeather.bind(null, user.id, coords.lat, coords.lng)}
                   satelliteAction={fetchSatelliteWaterData.bind(null, coords.lat, coords.lng)}
                 />
               ) : (
-                <button
-                  disabled
-                  className="bg-gray-100 text-gray-400 px-4 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 cursor-not-allowed"
-                >
-                  আগে লোকেশন সেট করুন
+                <button disabled className="btn-ghost" style={{ opacity: 0.5, cursor: 'not-allowed' }}>
+                  Set location first
                 </button>
               )}
             </div>
           </div>
-          <Suspense fallback={<div className="h-[43px] overflow-x-auto" />}>
+          <Suspense fallback={<div style={{ height: '44px' }} />}>
             <DashboardTabs active={activeTab} />
           </Suspense>
         </div>
@@ -469,112 +462,78 @@ export default async function DashboardPage({
           TAB: OVERVIEW
       ════════════════════════════════ */}
       {activeTab === 'overview' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-4">
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
+          {/* Survey pending notice */}
           {!weeklyComplete && rawPlots.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 flex items-start gap-3">
-              <span className="text-xl shrink-0">📋</span>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">
-                  সাপ্তাহিক সার্ভে সম্পন্ন করুন ({completedLandIds.length}/{rawPlots.length} জমি)
-                </p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  স্ক্যান লগ জমা দেওয়ার আগে এই সপ্তাহের সার্ভে সব জমির জন্য সম্পন্ন করুন।
-                </p>
-                <a href="?tab=survey" className="inline-block mt-2 text-xs font-semibold text-amber-800 underline">
-                  → সার্ভে ট্যাবে যান
-                </a>
-              </div>
+            <div className="alert alert-warning">
+              <strong>Weekly Field Survey Pending</strong> ({completedLandIds.length}/{rawPlots.length} plots completed).
+              {' '}<a href="?tab=survey" style={{ color: 'var(--status-warn)', fontWeight: 600, textDecoration: 'underline' }}>Complete survey to unlock Diagnostic Scan.</a>
             </div>
           )}
 
           <WaterAlertBanner alerts={waterAlerts} farmerId={user.id} />
 
+          {/* No location set */}
           {!coords && (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center">
-              <p className="text-sm font-medium text-gray-700 mb-1">খামারের অবস্থান সেট করা হয়নি</p>
-              <p className="text-xs text-gray-400">নিচের ফর্মে Latitude ও Longitude দিন।</p>
+            <div className="card" style={{ textAlign: 'center', border: '1px dashed var(--border-strong)', padding: '40px' }}>
+              <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '4px' }}>Farm location not configured</p>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Enter Latitude and Longitude in the Location section below.</p>
             </div>
           )}
 
+          {/* No weather data */}
           {coords && !weather && (
-            <div className="bg-amber-50 rounded-2xl border border-amber-100 px-5 py-3.5 flex items-center gap-3">
-              <span className="text-lg">🌤️</span>
-              <div>
-                <p className="text-sm font-medium text-amber-800">আবহাওয়া ডাটা নেই</p>
-                <p className="text-xs text-amber-600 mt-0.5">
-                  &quot;আবহাওয়া রিফ্রেশ&quot; চাপুন।
-                </p>
-              </div>
+            <div className="alert alert-warning">
+              No weather data available. Press &quot;Refresh Data&quot; to fetch current conditions.
             </div>
           )}
 
+          {/* Weather metrics */}
           {weather && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">🌡️</span>
-                  <span className="text-xs font-medium text-gray-500">তাপমাত্রা</span>
+            <div>
+              <div className="section-title">Current Atmospheric Conditions</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1px', background: 'var(--border)', border: '1px solid var(--border)' }}>
+                <div style={{ background: '#fff', padding: '16px 18px' }}>
+                  <div className="metric-label">Temperature</div>
+                  <div className="metric-value" style={{ fontSize: '1.5rem' }}>{weather.temperature_2m}°C</div>
+                  {daily?.temperature_2m_max?.[0] && <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Max: {daily.temperature_2m_max[0]}°C</div>}
                 </div>
-                <p className="text-2xl font-bold text-gray-900">{weather.temperature_2m}°</p>
-                {daily?.temperature_2m_max?.[0] && (
-                  <p className="text-xs text-gray-400 mt-0.5">সর্বোচ্চ {daily.temperature_2m_max[0]}°</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">💧</span>
-                  <span className="text-xs font-medium text-gray-500">আর্দ্রতা</span>
+                <div style={{ background: '#fff', padding: '16px 18px' }}>
+                  <div className="metric-label">Humidity</div>
+                  <div className="metric-value" style={{ fontSize: '1.5rem' }}>{weather.relative_humidity_2m}%</div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Precipitation: {weather.precipitation} mm</div>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">{weather.relative_humidity_2m}%</p>
-                <p className="text-xs text-gray-400 mt-0.5">বৃষ্টি {weather.precipitation} mm</p>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">💨</span>
-                  <span className="text-xs font-medium text-gray-500">বাতাস</span>
+                <div style={{ background: '#fff', padding: '16px 18px' }}>
+                  <div className="metric-label">Wind Speed</div>
+                  <div className="metric-value" style={{ fontSize: '1.5rem' }}>{weather.wind_speed_10m} <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>km/h</span></div>
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>{windDir} ({weather.wind_direction_10m}°)</div>
                 </div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {weather.wind_speed_10m} <span className="text-base font-medium text-gray-500">km/h</span>
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">{windDir} ({weather.wind_direction_10m}°)</p>
-              </div>
-
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xl">🏭</span>
-                  <span className="text-xs font-medium text-gray-500">দূষণ ঝুঁকি</span>
+                <div style={{ background: '#fff', padding: '16px 18px' }}>
+                  <div className="metric-label">Industrial Plumes</div>
+                  {hotspots.filter(h => h.is_in_plume).length === 0 ? (
+                    <>
+                      <div className="metric-value" style={{ fontSize: '1.5rem', color: 'var(--status-safe)' }}>Clear</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>{hotspots.length} sources monitored</div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="metric-value" style={{ fontSize: '1.5rem', color: 'var(--status-danger)' }}>{hotspots.filter(h => h.is_in_plume).length} Active</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '3px' }}>Plumes in wind path</div>
+                    </>
+                  )}
                 </div>
-                {hotspots.filter(h => h.is_in_plume).length === 0 ? (
-                  <>
-                    <p className="text-2xl font-bold text-green-600">নিরাপদ</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{hotspots.length}টি কারখানা</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-2xl font-bold text-red-600">{hotspots.filter(h => h.is_in_plume).length}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">সক্রিয় প্লাম</p>
-                  </>
-                )}
               </div>
             </div>
           )}
 
+          {/* Blast risk alert */}
           {weather &&
             weather.relative_humidity_2m >= 85 &&
             weather.temperature_2m >= 17 &&
             weather.temperature_2m <= 28 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl px-5 py-3.5 flex items-start gap-3">
-              <span className="text-lg shrink-0">⚠️</span>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">ব্লাস্ট রোগের উচ্চ ঝুঁকি</p>
-                <p className="text-xs text-amber-700 mt-0.5">
-                  তাপ {weather.temperature_2m}°C, আর্দ্রতা {weather.relative_humidity_2m}% —
-                  ধানের ব্লাস্টের জন্য অনুকূল। ট্রাইসাইক্লাজল স্প্রে বিবেচনা করুন।
-                </p>
-              </div>
+            <div className="alert alert-warning">
+              <strong>High Risk Alert — Rice Blast Disease:</strong> Current conditions (Temp: {weather.temperature_2m}°C, Humidity: {weather.relative_humidity_2m}%) are favorable for <em>Magnaporthe oryzae</em> infection. Consider Tricyclazole application.
             </div>
           )}
 
@@ -599,21 +558,27 @@ export default async function DashboardPage({
           )}
 
           {coords && (
-            <ImpactMapWrapper
-              hotspots={hotspots}
-              satelliteData={satelliteData}
-              farmerLat={coords.lat}
-              farmerLng={coords.lng}
-              windFromDeg={windFromDeg}
-              windSpeedKmh={windSpeedKmh}
-            />
+            <div>
+              <div className="section-title">GIS Impact Map — Pollution Hotspots &amp; Plumes</div>
+              <ImpactMapWrapper
+                hotspots={hotspots}
+                satelliteData={satelliteData}
+                farmerLat={coords.lat}
+                farmerLng={coords.lng}
+                windFromDeg={windFromDeg}
+                windSpeedKmh={windSpeedKmh}
+              />
+            </div>
           )}
 
-          <LocationUpdater
-            currentLat={currentLat}
-            currentLng={currentLng}
-            currentZone={farmer?.zone_id ?? ''}
-          />
+          <div>
+            <div className="section-title">Location Settings</div>
+            <LocationUpdater
+              currentLat={currentLat}
+              currentLng={currentLng}
+              currentZone={farmer?.zone_id ?? ''}
+            />
+          </div>
         </div>
       )}
 
@@ -621,40 +586,29 @@ export default async function DashboardPage({
           TAB: LAND REGISTRATION
       ════════════════════════════════ */}
       {activeTab === 'land' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px' }}>
+          <div className="section-title">Land Parcel Registry</div>
           <LandRegistration farmerId={user.id} />
         </div>
       )}
 
-      {/* ════════════════════════════════
-          TAB: WEEKLY SURVEY
-      ════════════════════════════════ */}
       {activeTab === 'survey' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px' }}>
+          <div className="section-title">Weekly Field Survey — Week {thisWeek} / {thisYear}</div>
           {rawPlots.length > 0 && (
-            <div className={`mb-4 rounded-xl border px-4 py-3 flex items-center gap-3 ${weeklyComplete ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'}`}>
-              <span className="text-lg">{weeklyComplete ? '✅' : '⏳'}</span>
-              <div>
-                <p className={`text-sm font-semibold ${weeklyComplete ? 'text-green-800' : 'text-amber-800'}`}>
-                  {weeklyComplete
-                    ? 'এই সপ্তাহের সার্ভে সম্পন্ন — স্ক্যান লগ জমা দিতে পারবেন'
-                    : `সার্ভে বাকি: ${rawPlots.length - completedLandIds.length}টি জমি`}
-                </p>
-                <p className={`text-xs mt-0.5 ${weeklyComplete ? 'text-green-600' : 'text-amber-600'}`}>
-                  সপ্তাহ {thisWeek}/{thisYear} · {completedLandIds.length}/{rawPlots.length} জমি ✓
-                </p>
-              </div>
+            <div className={`alert ${weeklyComplete ? 'alert-success' : 'alert-warning'}`} style={{ marginBottom: '16px' }}>
+              {weeklyComplete
+                ? `All ${rawPlots.length} plots surveyed this week. Diagnostic scan is now unlocked.`
+                : `Survey incomplete: ${rawPlots.length - completedLandIds.length} of ${rawPlots.length} plots pending.`}
             </div>
           )}
           <WeeklySurvey farmerId={user.id} farmerLat={coords?.lat ?? null} farmerLng={coords?.lng ?? null} />
         </div>
       )}
 
-      {/* ════════════════════════════════
-          TAB: SCANNER
-      ════════════════════════════════ */}
       {activeTab === 'scan' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5">
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px' }}>
+          <div className="section-title">Crop Diagnostic Scan</div>
           <DiseaseScanner farmerId={user.id} plots={plotsWithSurvey} />
         </div>
       )}
@@ -663,53 +617,49 @@ export default async function DashboardPage({
           TAB: POLLUTION REPORT
       ════════════════════════════════ */}
       {activeTab === 'pollution' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h2 className="font-bold text-gray-900 text-base mb-1">🏭 দূষণ রিপোর্ট</h2>
-            <p className="text-xs text-gray-500">
-              স্ক্যান লগ, পানি সতর্কতা, স্যাটেলাইট ও কারখানার তথ্য এক জায়গায়।
-            </p>
-          </div>
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 mb-1">পলিউশন স্ক্যান (৯০ দিন)</p>
-              <p className="text-2xl font-bold text-gray-900">{pollutionStats.scanCount}</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                শেষ স্ক্যান: {pollutionStats.lastScanAt ? new Date(pollutionStats.lastScanAt).toLocaleDateString('bn-BD') : '—'}
-              </p>
+          <div className="section-title">Pollution Monitoring Report</div>
+
+          {/* Metric grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '1px', background: 'var(--border)', border: '1px solid var(--border)' }}>
+            <div style={{ background: '#fff', padding: '18px 20px' }}>
+              <div className="metric-label">Abiotic Scans (90 days)</div>
+              <div className="metric-value">{pollutionStats.scanCount}</div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                Last: {pollutionStats.lastScanAt ? new Date(pollutionStats.lastScanAt).toLocaleDateString('en-GB') : 'N/A'}
+              </div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 mb-1">সক্রিয় পানির সতর্কতা</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div style={{ background: '#fff', padding: '18px 20px' }}>
+              <div className="metric-label">Active Water Alerts</div>
+              <div className="metric-value" style={{ color: waterAlerts.filter(a => !a.is_read).length > 0 ? 'var(--status-danger)' : 'var(--status-safe)' }}>
                 {waterAlerts.filter(a => !a.is_read).length}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">মোট {waterAlerts.length}টি</p>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>Total: {waterAlerts.length}</div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 mb-1">স্যাটেলাইট সতর্ক পয়েন্ট</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div style={{ background: '#fff', padding: '18px 20px' }}>
+              <div className="metric-label">Satellite Alert Points</div>
+              <div className="metric-value" style={{ color: satelliteData.filter(s => s.suspected_pollution).length > 0 ? 'var(--status-warn)' : undefined }}>
                 {satelliteData.filter(s => s.suspected_pollution).length}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">মোট {satelliteData.length}টি</p>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>of {satelliteData.length} total</div>
             </div>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 mb-1">সক্রিয় প্লাম কারখানা</p>
-              <p className="text-2xl font-bold text-gray-900">
+            <div style={{ background: '#fff', padding: '18px 20px' }}>
+              <div className="metric-label">Active Plume Sources</div>
+              <div className="metric-value" style={{ color: hotspots.filter(h => h.is_in_plume).length > 0 ? 'var(--status-danger)' : 'var(--status-safe)' }}>
                 {hotspots.filter(h => h.is_in_plume).length}
-              </p>
-              <p className="text-xs text-gray-400 mt-0.5">মোট {hotspots.length}টি</p>
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>of {hotspots.length} sources</div>
             </div>
           </div>
 
+          {/* Detected pollutants */}
           {pollutionStats.pollutants.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <p className="text-xs text-gray-500 mb-2">সন্দেহজনক দূষণকারী</p>
-              <div className="flex flex-wrap gap-2">
+            <div className="card" style={{ padding: '14px 18px' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '10px' }}>Detected Pollutants (Confirmed)</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 {pollutionStats.pollutants.map(p => (
-                  <span key={p} className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-700">
-                    {p}
-                  </span>
+                  <span key={p} className="stat-badge stat-badge-danger">{p}</span>
                 ))}
               </div>
             </div>
@@ -718,18 +668,24 @@ export default async function DashboardPage({
           <WaterAlertBanner alerts={waterAlerts} farmerId={user.id} />
 
           {rawPlots.length > 0 && (
-            <AirExposureCard landId={rawPlots[0].land_id} />
+            <div>
+              <div className="section-title">Air Exposure Timeline</div>
+              <AirExposureCard landId={rawPlots[0].land_id} />
+            </div>
           )}
 
           {coords && (
-            <ImpactMapWrapper
-              hotspots={hotspots}
-              satelliteData={satelliteData}
-              farmerLat={coords.lat}
-              farmerLng={coords.lng}
-              windFromDeg={windFromDeg}
-              windSpeedKmh={windSpeedKmh}
-            />
+            <div>
+              <div className="section-title">GIS Impact Map — Industrial Zones &amp; Plumes</div>
+              <ImpactMapWrapper
+                hotspots={hotspots}
+                satelliteData={satelliteData}
+                farmerLat={coords.lat}
+                farmerLng={coords.lng}
+                windFromDeg={windFromDeg}
+                windSpeedKmh={windSpeedKmh}
+              />
+            </div>
           )}
         </div>
       )}
@@ -738,86 +694,67 @@ export default async function DashboardPage({
           TAB: RISK & LOSS
       ════════════════════════════════ */}
       {activeTab === 'risk' && (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-5 space-y-4">
+        <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          {/* Header */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <h2 className="font-bold text-gray-900 text-base mb-1">🎯 রিস্ক ও ক্ষতি বিশ্লেষণ</h2>
-            <p className="text-xs text-gray-500">
-              শিল্প দূষণ, পানি, আবহাওয়া ও মাটির তথ্য মিলিয়ে প্রতিটি জমির ঝুঁকি হিসাব করা হয়।
-              ফলাফল বীমা কোম্পানি ও সরকারকে দেওয়া হয়।
-            </p>
-          </div>
+          <div className="section-title">Risk Assessment &amp; Crop Loss Analysis</div>
 
           {farmHealth && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-              <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="card">
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-base">🧬 ফার্ম হেলথ স্কোর (জৈবিক)</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    বায়োটিক স্ক্যান ও সার্ভে থেকে পৃথক স্বাস্থ্য সূচক।
-                  </p>
+                  <h3 style={{ fontWeight: 700, fontSize: '14px', color: 'var(--text-primary)', marginBottom: '4px' }}>Farm Health Index</h3>
+                  <p style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Derived from diagnostic scan logs, field surveys, and environmental sensor data.</p>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                  farmHealth.level === 'good'
-                    ? 'bg-green-100 text-green-700'
-                    : farmHealth.level === 'watch'
-                    ? 'bg-amber-100 text-amber-700'
-                    : farmHealth.level === 'stressed'
-                    ? 'bg-orange-100 text-orange-700'
-                    : 'bg-red-100 text-red-700'
+                <span className={`stat-badge ${
+                  farmHealth.level === 'good' ? 'stat-badge-safe'
+                  : farmHealth.level === 'watch' ? 'stat-badge-warn'
+                  : 'stat-badge-danger'
                 }`}>
-                  {farmHealth.level === 'good' && 'ভাল'}
-                  {farmHealth.level === 'watch' && 'সতর্ক'}
-                  {farmHealth.level === 'stressed' && 'ঝুঁকিপূর্ণ'}
-                  {farmHealth.level === 'critical' && 'গুরুতর'}
-                </div>
+                  {farmHealth.level === 'good' && 'Good'}
+                  {farmHealth.level === 'watch' && 'Caution'}
+                  {farmHealth.level === 'stressed' && 'Stressed'}
+                  {farmHealth.level === 'critical' && 'Critical'}
+                </span>
               </div>
-
-              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                  <p className="text-xs text-gray-400">স্কোর</p>
-                  <p className="text-2xl font-bold text-gray-900">{farmHealth.score}</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '1px', background: 'var(--border)', border: '1px solid var(--border)' }}>
+                <div style={{ background: 'var(--surface-2)', padding: '14px 16px' }}>
+                  <div className="metric-label">Health Score</div>
+                  <div className="metric-value">{farmHealth.score}<span style={{ fontSize: '0.9rem', fontWeight: 500 }}>/100</span></div>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                  <p className="text-xs text-gray-400">বায়োটিক স্ক্যান</p>
-                  <p className="text-2xl font-bold text-gray-900">{farmHealth.totalBiotic}</p>
+                <div style={{ background: 'var(--surface-2)', padding: '14px 16px' }}>
+                  <div className="metric-label">Biotic Scans</div>
+                  <div className="metric-value">{farmHealth.totalBiotic}</div>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                  <p className="text-xs text-gray-400">প্রধান সমস্যা</p>
-                  <p className="text-sm font-semibold text-gray-700 mt-1">{farmHealth.dominantIssue}</p>
+                <div style={{ background: 'var(--surface-2)', padding: '14px 16px' }}>
+                  <div className="metric-label">Primary Threat</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginTop: '4px' }}>{farmHealth.dominantIssue}</div>
                 </div>
-                <div className="bg-gray-50 rounded-xl p-3 border border-gray-100">
-                  <p className="text-xs text-gray-400">পেস্ট অবস্থা</p>
-                  <p className="text-sm font-semibold text-gray-700 mt-1">
-                    {farmHealth.pestLevel === 'high' ? 'উচ্চ' : farmHealth.pestLevel === 'medium' ? 'মাঝারি' : 'স্বাভাবিক'}
-                  </p>
+                <div style={{ background: 'var(--surface-2)', padding: '14px 16px' }}>
+                  <div className="metric-label">Pest Pressure</div>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)', marginTop: '4px' }}>
+                    {farmHealth.pestLevel === 'high' ? 'High' : farmHealth.pestLevel === 'medium' ? 'Medium' : 'Normal'}
+                  </div>
                 </div>
               </div>
             </div>
           )}
 
           {rawPlots.length === 0 && (
-            <div className="bg-white rounded-2xl border border-dashed border-gray-200 p-8 text-center">
-              <p className="text-2xl mb-2">🗺️</p>
-              <p className="text-sm text-gray-500">কোনো জমি নথিভুক্ত নেই।</p>
-              <a href="?tab=land" className="inline-block mt-2 text-xs font-semibold text-green-700 underline">
-                → জমি নিবন্ধন করুন
-              </a>
+            <div className="card" style={{ textAlign: 'center', border: '1px dashed var(--border-strong)', padding: '40px' }}>
+              <p style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: '6px' }}>No land parcels registered.</p>
+              <a href="?tab=land" style={{ fontSize: '12px', fontWeight: 600, color: 'var(--primary)', textDecoration: 'underline' }}>Register a land parcel to begin monitoring.</a>
             </div>
           )}
 
-          {/* Risk cards for each land */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: '16px' }}>
             {rawPlots.map((plot: LandPlotOverview) => {
               const summary = riskMap[plot.land_id]
-              // Extract land centroid for heavy metal pre-score
               const landCentroid = plot.boundary_geojson
                 ? getGeoJSONCentroid(plot.boundary_geojson)
                 : null
 
               return (
-                <div key={plot.land_id} className="space-y-4">
+                <div key={plot.land_id} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
                   <FarmRiskCard
                     landId={plot.land_id}
                     landNameBn={plot.land_name_bn ?? plot.land_name}
@@ -839,33 +776,34 @@ export default async function DashboardPage({
             })}
           </div>
 
-          {/* Heavy Metal Risk Map */}
           {coords && hmMapPlots.length > 0 && (
-            <HeavyMetalMap
-              plots={hmMapPlots}
-              centerLat={coords.lat}
-              centerLng={coords.lng}
-            />
+            <div>
+              <div className="section-title">Heavy Metal Spatial Distribution Map</div>
+              <HeavyMetalMap
+                plots={hmMapPlots}
+                centerLat={coords.lat}
+                centerLng={coords.lng}
+              />
+            </div>
           )}
 
-          {/* Data Export */}
           <DataExport hasConsent={farmer?.data_sharing_consent ?? false} />
 
-          {/* Data selling promo banner */}
-          <div className="bg-gradient-to-r from-green-600 to-emerald-700 rounded-2xl p-5 text-white">
-            <h3 className="font-bold text-base mb-1">🌾 আপনার ডেটা = আপনার শক্তি</h3>
-            <p className="text-sm text-green-100 mb-3">
-              আপনার জমির দূষণ তথ্য বীমা কোম্পানি ও সরকারকে পাঠানো হয়।
-              এতে এলাকায় পরিবেশ আইন শক্তিশালী হয় এবং ভবিষ্যতে বীমা দাবি সহজ হয়।
+          <div className="card" style={{ borderLeft: '3px solid var(--accent)', background: 'var(--accent-light)', borderRadius: '4px' }}>
+            <h3 style={{ fontWeight: 700, fontSize: '13px', color: 'var(--accent)', marginBottom: '6px' }}>Data Sharing — Environmental Policy Support</h3>
+            <p style={{ fontSize: '12px', color: '#1e3a5f', marginBottom: '12px', lineHeight: '1.6' }}>
+              Anonymized field data from this farm is shared with DoE and DAE for environmental regulation enforcement and agricultural risk mapping.
+              This supports insurance claim processing and enables government intervention in pollution-affected zones.
             </p>
-            <div className="flex gap-2 flex-wrap">
-              <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full">🏦 বীমা কোম্পানি</span>
-              <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full">🏛️ DOE/DAE</span>
-              <span className="text-xs bg-white/20 px-2.5 py-1 rounded-full">📦 এক্সপোর্টার</span>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <span className="stat-badge stat-badge-neutral">Insurance Agencies</span>
+              <span className="stat-badge stat-badge-neutral">DOE / DAE</span>
+              <span className="stat-badge stat-badge-neutral">Export Compliance</span>
             </div>
           </div>
         </div>
       )}
+
 
     </div>
   )

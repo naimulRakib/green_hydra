@@ -52,10 +52,10 @@ export default async function HeavyMetalRiskCard({
             <div className="flex justify-between items-start mb-3 border-b border-black/5 pb-3">
               <div>
                 <h3 className={`font-bold text-lg flex items-center gap-2 ${textClass}`}>
-                  <span>🧪 ভারি ধাতু প্রি-স্কোর (প্রাক-বিশ্লেষণ)</span>
+                  <span>🧪 AI ভারি ধাতু প্রেডিকশন (Neural Prior)</span>
                 </h3>
                 <p className="text-xs text-gray-500 mt-1">
-                  জোন ডেটা ও শিল্প নৈকট্য থেকে প্রাথমিক হিসাব — কোনো স্ক্যান ছাড়াই
+                  জিও-স্পেশিয়াল জোন ডেটা ও শিল্প নৈকট্য থেকে মেশিন লার্নিং পূর্বানুমান
                 </p>
               </div>
               <div className={`px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider border

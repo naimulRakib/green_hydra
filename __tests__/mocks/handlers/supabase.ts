@@ -19,7 +19,7 @@ export const createMockSupabaseClient = () => ({
     maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
   })),
 
-  rpc: vi.fn((fnName: string, params?: any) => {
+  rpc: vi.fn((fnName: string, params?: unknown) => {
     // Mock RPC responses based on function name
     if (fnName === 'detect_and_save_metal_risk') {
       return Promise.resolve({

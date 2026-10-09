@@ -1,18 +1,14 @@
 "use client";
-/**
- * DashboardTabs — client component for tab navigation.
- * Updates URL search param ?tab= so the server re-renders with correct tab.
- */
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 const TABS = [
-  { id: "overview", label: "🏠 ওভারভিউ" },
-  { id: "land",     label: "🗺️ জমি নিবন্ধন" },
-  { id: "survey",   label: "📋 সার্ভে" },
-  { id: "pollution", label: "🏭 দূষণ রিপোর্ট" },
-  { id: "risk",     label: "🎯 রিস্ক ও ক্ষতি" },
-  { id: "scan",     label: "🔍 স্ক্যানার" },
+  { id: "overview",   label: "Overview" },
+  { id: "land",       label: "Land Registry" },
+  { id: "survey",     label: "Field Survey" },
+  { id: "pollution",  label: "Pollution Report" },
+  { id: "risk",       label: "Risk Assessment" },
+  { id: "scan",       label: "Diagnostic Scan" },
 ] as const;
 
 type TabId = typeof TABS[number]["id"];
@@ -29,17 +25,24 @@ export default function DashboardTabs({ active }: { active: TabId }) {
   }
 
   return (
-    <div className="flex gap-0 -mb-px overflow-x-auto">
+    <div style={{ display: 'flex', borderBottom: '2px solid var(--border)', overflowX: 'auto', gap: 0, marginTop: '4px' }}>
       {TABS.map(tab => (
         <button
           key={tab.id}
           onClick={() => navigate(tab.id)}
-          className={[
-            "px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors",
-            active === tab.id
-              ? "border-green-600 text-green-700 bg-white"
-              : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300",
-          ].join(" ")}
+          style={{
+            padding: '10px 18px',
+            fontSize: '13px',
+            fontWeight: active === tab.id ? 600 : 500,
+            color: active === tab.id ? 'var(--primary)' : 'var(--text-muted)',
+            background: 'transparent',
+            border: 'none',
+            borderBottom: `2px solid ${active === tab.id ? 'var(--primary)' : 'transparent'}`,
+            marginBottom: '-2px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            transition: 'color 0.15s, border-color 0.15s',
+          }}
         >
           {tab.label}
         </button>

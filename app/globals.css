@@ -1,261 +1,479 @@
 @import "tailwindcss";
+@import "leaflet/dist/leaflet.css";
+
+/* ══════════════════════════════════════════════════════
+   AgroSentinel Design System — Professional / Official
+   Color Palette: Deep teal-slate government aesthetic
+   ══════════════════════════════════════════════════════ */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand Colors */
+  --primary:       #1a5f3f;   /* Deep forest green */
+  --primary-light: #2d8a5e;
+  --primary-pale:  #e8f5ee;
+  --accent:        #2563a8;   /* Government blue */
+  --accent-light:  #dbeafe;
+
+  /* Neutrals */
+  --bg:            #f4f6f5;
+  --surface:       #ffffff;
+  --surface-2:     #f9fafb;
+  --border:        #dee3df;
+  --border-strong: #c3ccc5;
+
+  /* Text */
+  --text-primary:   #1a2e22;
+  --text-secondary: #4a5c4e;
+  --text-muted:     #7a8c7e;
+
+  /* Status */
+  --status-safe:     #166534;
+  --status-safe-bg:  #dcfce7;
+  --status-warn:     #92400e;
+  --status-warn-bg:  #fef3c7;
+  --status-danger:   #991b1b;
+  --status-danger-bg:#fee2e2;
+
+  --foreground: var(--text-primary);
+  --background: var(--bg);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ── Base Styles ──────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: 'Inter', 'Noto Sans Bengali', Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* ══════════════════════════════════════════════════════
-   Leaflet Map Enhancements for AgroSentinel
-   ══════════════════════════════════════════════════════ */
+/* ── Typography Scale ─────────────────────────────────── */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.3;
+}
 
-/* Better map container styling */
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1rem; }
+
+/* ── Official Card Component ──────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px 24px;
+}
+
+.card-sm {
+  padding: 14px 18px;
+}
+
+/* ── Official Button Styles ───────────────────────────── */
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+  padding: 9px 20px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-size: 13px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.btn-primary:hover { background: var(--primary-light); }
+
+.btn-secondary {
+  background: transparent;
+  color: var(--primary);
+  padding: 8px 18px;
+  border-radius: 5px;
+  font-weight: 600;
+  font-size: 13px;
+  border: 1.5px solid var(--primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-secondary:hover {
+  background: var(--primary-pale);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 8px 14px;
+  border-radius: 5px;
+  font-weight: 500;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-ghost:hover {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+}
+
+/* ── Stat Badge ───────────────────────────────────────── */
+.stat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.stat-badge-safe    { background: var(--status-safe-bg); color: var(--status-safe); }
+.stat-badge-warn    { background: var(--status-warn-bg); color: var(--status-warn); }
+.stat-badge-danger  { background: var(--status-danger-bg); color: var(--status-danger); }
+.stat-badge-neutral { background: #f1f5f1; color: var(--text-secondary); }
+
+/* ── Tab Navigation ───────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border);
+  overflow-x: auto;
+}
+
+.tab-item {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  white-space: nowrap;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+.tab-item:hover {
+  color: var(--primary);
+}
+
+.tab-item.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Data Table ───────────────────────────────────────── */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.data-table tr:last-child td { border-bottom: none; }
+
+.data-table tr:hover td { background: var(--surface-2); }
+
+/* ── Metric Block ─────────────────────────────────────── */
+.metric-block {
+  border-left: 3px solid var(--primary);
+  padding-left: 14px;
+}
+
+.metric-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.metric-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+/* ── Section Header ───────────────────────────────────── */
+.section-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+/* ── Alert Banner ─────────────────────────────────────── */
+.alert {
+  border-left: 4px solid transparent;
+  padding: 12px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+.alert-warning {
+  border-left-color: #d97706;
+  background: #fffbeb;
+  color: #78350f;
+}
+.alert-danger {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+  color: #7f1d1d;
+}
+.alert-info {
+  border-left-color: var(--accent);
+  background: var(--accent-light);
+  color: #1e3a5f;
+}
+.alert-success {
+  border-left-color: var(--primary);
+  background: var(--primary-pale);
+  color: var(--primary);
+}
+
+/* ── Form Elements ────────────────────────────────────── */
+.form-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.form-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface);
+  transition: border-color 0.15s;
+  outline: none;
+}
+
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(26, 95, 63, 0.08);
+}
+
+.form-select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-primary);
+  background: var(--surface);
+  transition: border-color 0.15s;
+  outline: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 16px;
+  padding-right: 36px;
+}
+
+/* ── Progress Bar ─────────────────────────────────────── */
+.progress-bar-track {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--primary);
+  transition: width 0.4s ease;
+}
+
+/* ═══════════════════════════════════════════════════════
+   Leaflet Map — Clean Official Style
+   ═══════════════════════════════════════════════════════ */
+
 .leaflet-container {
   font-family: inherit;
   border-radius: 0;
   z-index: 1;
 }
 
-/* Make popup more readable */
 .leaflet-popup-content-wrapper {
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
   padding: 0;
+  border: 1px solid var(--border);
 }
 
 .leaflet-popup-content {
   margin: 0;
-  padding: 12px;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.leaflet-popup-tip {
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-/* Better tooltip styling */
-.leaflet-tooltip {
-  border-radius: 8px;
-  padding: 8px 12px;
+  padding: 12px 14px;
   font-size: 12px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(0, 0, 0, 0.1);
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
-/* Improve zoom controls */
+.leaflet-popup-tip-container {
+  margin-top: -1px;
+}
+
+.leaflet-tooltip {
+  border-radius: 3px;
+  padding: 6px 10px;
+  font-size: 11px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  background: var(--surface);
+}
+
 .leaflet-control-zoom {
-  border-radius: 8px !important;
-  border: 1px solid rgba(0, 0, 0, 0.1) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+  border-radius: 4px !important;
+  border: 1px solid var(--border-strong) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
 }
 
 .leaflet-control-zoom a {
   border-radius: 0 !important;
-  width: 32px !important;
-  height: 32px !important;
-  line-height: 32px !important;
-  font-size: 16px !important;
+  width: 30px !important;
+  height: 30px !important;
+  line-height: 30px !important;
+  font-size: 14px !important;
+  color: var(--text-secondary) !important;
 }
 
 .leaflet-control-zoom a:first-child {
-  border-radius: 7px 7px 0 0 !important;
+  border-radius: 3px 3px 0 0 !important;
 }
 
 .leaflet-control-zoom a:last-child {
-  border-radius: 0 0 7px 7px !important;
+  border-radius: 0 0 3px 3px !important;
 }
 
-/* Attribution styling */
 .leaflet-control-attribution {
   font-size: 9px;
-  background: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.85);
   padding: 2px 6px;
-  border-radius: 4px 0 0 0;
+  border-radius: 2px 0 0 0;
+  color: var(--text-muted);
 }
 
-/* Mobile optimizations */
-@media (max-width: 640px) {
-  .leaflet-popup-content {
-    font-size: 12px;
-    max-width: 260px;
-  }
-
-  .leaflet-control-zoom a {
-    width: 36px !important;
-    height: 36px !important;
-    line-height: 36px !important;
-  }
-
-  .leaflet-control-attribution {
-    font-size: 8px;
-  }
-}
-
-/* Pulsing animation for markers */
+/* Map marker animations — subtle */
 @keyframes map-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-  70% { box-shadow: 0 0 0 15px rgba(59, 130, 246, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(26, 95, 63, 0.4); }
+  70%  { box-shadow: 0 0 0 12px rgba(26, 95, 63, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(26, 95, 63, 0); }
 }
 
-/* Farm marker pulse effect */
 .farm-marker-pulse {
-  animation: map-pulse 2s infinite;
+  animation: map-pulse 2.5s infinite;
 }
 
-/* Factory warning pulse */
 @keyframes factory-warning {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  50%       { opacity: 0.65; }
 }
 
 .factory-warning-pulse {
-  animation: factory-warning 1.5s ease-in-out infinite;
+  animation: factory-warning 2s ease-in-out infinite;
 }
 
-/* ══════════════════════════════════════════════════════
-   Wind Plume Enhanced Visibility
-   ══════════════════════════════════════════════════════ */
-
-/* Plume pulsating animation for active pollution */
-@keyframes plume-pulse {
-  0%, 100% {
-    opacity: 1;
-    filter: brightness(1);
-  }
-  50% {
-    opacity: 0.85;
-    filter: brightness(1.1);
-  }
-}
-
-/* Plume edge glow effect */
-@keyframes plume-glow {
-  0%, 100% {
-    stroke-opacity: 0.6;
-    stroke-width: 2;
-  }
-  50% {
-    stroke-opacity: 0.9;
-    stroke-width: 3;
-  }
-}
-
-/* Wind direction arrow rotation */
-@keyframes wind-arrow-pulse {
-  0%, 100% {
-    transform: scale(1);
-    filter: drop-shadow(0 2px 4px rgba(59, 130, 246, 0.3));
-  }
-  50% {
-    transform: scale(1.05);
-    filter: drop-shadow(0 4px 8px rgba(59, 130, 246, 0.5));
-  }
-}
-
-/* Satellite marker attention pulse */
 @keyframes satellite-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0.7);
-  }
-  70% {
-    box-shadow: 0 0 0 20px rgba(139, 92, 246, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
-  }
+  0%   { box-shadow: 0 0 0 0 rgba(37, 99, 168, 0.4); }
+  70%  { box-shadow: 0 0 0 16px rgba(37, 99, 168, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(37, 99, 168, 0); }
 }
 
 .satellite-marker-pulse {
   animation: satellite-pulse 2.5s infinite;
 }
 
-/* Pollution warning ring */
 @keyframes pollution-ring {
-  0% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.8);
-  }
-  70% {
-    box-shadow: 0 0 0 25px rgba(239, 68, 68, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
-  }
+  0%   { box-shadow: 0 0 0 0 rgba(153, 27, 27, 0.5); }
+  70%  { box-shadow: 0 0 0 20px rgba(153, 27, 27, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(153, 27, 27, 0); }
 }
 
 .pollution-warning-pulse {
-  animation: pollution-ring 2s infinite;
+  animation: pollution-ring 2.2s infinite;
 }
 
-/* Leaflet polygon enhancement for wind plumes */
+/* Plume map layers */
 .leaflet-interactive {
-  transition: opacity 0.3s ease, fill-opacity 0.3s ease;
+  transition: opacity 0.2s ease;
 }
 
 .leaflet-interactive:hover {
-  opacity: 0.95 !important;
-  stroke-width: 5 !important;
-}
-
-/* Enhanced plume visibility classes */
-.danger-plume {
-  animation: plume-pulse 2s ease-in-out infinite;
-  filter: drop-shadow(0 2px 8px rgba(239, 68, 68, 0.3));
+  opacity: 0.9 !important;
 }
 
 .danger-plume path {
-  stroke-dasharray: none !important;
-  stroke: rgba(239, 68, 68, 0.8) !important;
-  stroke-width: 3 !important;
-  fill: rgba(239, 68, 68, 0.45) !important;
-}
-
-.safe-plume {
-  opacity: 0.7;
-  filter: drop-shadow(0 1px 4px rgba(148, 163, 184, 0.2));
+  stroke: rgba(153, 27, 27, 0.7) !important;
+  stroke-width: 2 !important;
+  fill: rgba(153, 27, 27, 0.35) !important;
 }
 
 .safe-plume path {
-  stroke: rgba(148, 163, 184, 0.6) !important;
+  stroke: rgba(107, 114, 128, 0.5) !important;
   stroke-width: 1.5 !important;
-  stroke-dasharray: 6 6 !important;
-  fill: rgba(148, 163, 184, 0.15) !important;
-}
-
-/* Critical danger plume extra effects */
-.critical-plume {
-  animation: plume-pulse 1.5s ease-in-out infinite, plume-glow 2s ease-in-out infinite;
-  filter: drop-shadow(0 4px 12px rgba(220, 38, 38, 0.4));
+  stroke-dasharray: 5 5 !important;
+  fill: rgba(107, 114, 128, 0.1) !important;
 }
 
 .critical-plume path {
-  stroke: rgba(220, 38, 38, 0.9) !important;
-  stroke-width: 4 !important;
-  fill: rgba(220, 38, 38, 0.5) !important;
+  stroke: rgba(127, 29, 29, 0.85) !important;
+  stroke-width: 3 !important;
+  fill: rgba(127, 29, 29, 0.4) !important;
 }
 
-/* Wind arrow enhancements */
-.leaflet-marker-icon .wind-arrow {
-  animation: wind-arrow-pulse 3s ease-in-out infinite;
+@media (max-width: 640px) {
+  .leaflet-popup-content {
+    font-size: 11px;
+    max-width: 240px;
+  }
 }

@@ -64,7 +64,15 @@ export default function HeavyMetalMap({ plots, centerLat, centerLng }: Props) {
   }, []);
 
   useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return;
+    if (!mapRef.current) return;
+
+    // Destroy previous map instance before creating a new one (prevents stale layers)
+    if (mapInstance.current) {
+      mapInstance.current.remove();
+      mapInstance.current = null;
+    }
+
+    let cancelled = false;
 
     // Dynamically load Leaflet CSS + JS
     const loadLeaflet = async () => {
@@ -84,6 +92,8 @@ export default function HeavyMetalMap({ plots, centerLat, centerLng }: Props) {
         });
       }
 
+      if (cancelled) return;
+
       const L = (window as unknown as Record<string, unknown>).L as LeafletLib;
       if (!L || !mapRef.current) return;
 
@@ -97,6 +107,7 @@ export default function HeavyMetalMap({ plots, centerLat, centerLng }: Props) {
 
       // Add plot markers
       for (const plot of plots) {
+        if (cancelled) break;
         const color = getColor(plot.heavy_metal_score);
         const score = plot.heavy_metal_score != null ? Math.round(plot.heavy_metal_score * 100) : 0;
         const metalName = plot.metal_type ? (metalBnMap[plot.metal_type] ?? plot.metal_type) : "—";
@@ -144,48 +155,43 @@ export default function HeavyMetalMap({ plots, centerLat, centerLng }: Props) {
                 <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px;margin-top:8px;font-size:11px;">
                   <div style="font-weight:bold;color:#dc2626;margin-bottom:4px;">⚠️ উচ্চ ঝুঁকি</div>
                   <div style="color:#991b1b;">
-                    এই জমিতে ভারি ধাতু দূষণ উচ্চ মাত্রায় সনাক্ত করা হয়েছে। স্ক্যানার ব্যবহার করে বিস্তারিত পরীক্ষা করুন।
+                    এই জমিতে ভারি ধাতু দূষণ উচ্চ মাত্রায় সনাক্ত করা হয়েছে।
                   </div>
                 </div>
               ` : score >= 20 ? `
                 <div style="background:#fffbeb;border:1px solid #fef3c7;border-radius:8px;padding:8px;margin-top:8px;font-size:11px;">
                   <div style="font-weight:bold;color:#f59e0b;margin-bottom:4px;">⚠️ মাঝারি ঝুঁকি</div>
-                  <div style="color:#92400e;">
-                    এই জমিতে কিছু ভারি ধাতু পাওয়া গেছে। নিয়মিত পর্যবেক্ষণ করুন।
-                  </div>
+                  <div style="color:#92400e;">এই জমিতে কিছু ভারি ধাতু পাওয়া গেছে।</div>
                 </div>
               ` : `
                 <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:8px;margin-top:8px;font-size:11px;">
                   <div style="font-weight:bold;color:#16a34a;margin-bottom:4px;">✓ নিরাপদ</div>
-                  <div style="color:#166534;">
-                    এই জমিতে ভারি ধাতু দূষণ নিম্ন মাত্রায় রয়েছে।
-                  </div>
+                  <div style="color:#166534;">এই জমিতে ভারি ধাতু দূষণ নিম্ন মাত্রায় রয়েছে।</div>
                 </div>
               `}
             ` : `
               <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px;font-size:11px;color:#6b7280;">
                 <div style="font-weight:bold;color:#374151;margin-bottom:4px;">📊 ডেটা নেই</div>
-                <div>
-                  এই জমির জন্য ভারি ধাতু পরীক্ষার ডেটা নেই। স্ক্যানার ব্যবহার করে মাটি পরীক্ষা করুন।
-                </div>
+                <div>এই জমির জন্য ভারি ধাতু পরীক্ষার ডেটা নেই।</div>
               </div>
             `}
           </div>`
         );
       }
 
-      setLoaded(true);
+      if (!cancelled) setLoaded(true);
     };
 
     loadLeaflet();
 
     return () => {
+      cancelled = true;
       if (mapInstance.current) {
         mapInstance.current.remove();
         mapInstance.current = null;
       }
     };
-  }, [plots, centerLat, centerLng, hasData]);
+  }, [plots, centerLat, centerLng]);
 
   // Legend
   const legendItems = [

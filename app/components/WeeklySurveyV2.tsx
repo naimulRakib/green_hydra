@@ -627,7 +627,7 @@ const S: Record<string, React.CSSProperties> = {
     alignItems: "center",
     gap: 6,
   },
-  landTabActive: { background: "#166534", borderColor: "#166534", color: "#fff" },
+  landTabActive: { background: "#166534", border: "1px solid #166534", color: "#fff" },
   landArea: { fontSize: 11, opacity: 0.7 },
   
   categoryGrid: {

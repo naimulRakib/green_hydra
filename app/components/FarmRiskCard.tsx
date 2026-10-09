@@ -51,12 +51,12 @@ const RISK_CONFIG = {
 } as const
 
 const BREAKDOWN_LABELS: Record<string, string> = {
-  industrial: '🏭 শিল্প',
-  water:      '💧 পানি',
-  community:  '👥 সম্প্রদায়',
-  air:        '💨 বায়ু',
-  soil:       '🌱 মাটি',
-  weather:    '🌤️ আবহাওয়া',
+  industrial: '🏭 AI শিল্প দূষণ ট্র্যাক',
+  water:      '💧 সেন্সর ওয়াটার ডেটা',
+  community:  '👥 ক্রাউডসোর্সড ট্রেন্ড',
+  air:        '💨 প্লিউম ডিটেকশন',
+  soil:       '🌱 স্পেশিয়াল সয়েল প্রেডিক্ট',
+  weather:    '🌤️ ক্লাইমেট মডেল',
 }
 
 const CROP_OPTIONS = [

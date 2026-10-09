@@ -47,7 +47,7 @@ export function calculateBearing(
     Math.cos(lat1Rad) * Math.sin(lat2Rad) -
     Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng)
 
-  let bearing = (Math.atan2(y, x) * 180) / Math.PI
+  const bearing = (Math.atan2(y, x) * 180) / Math.PI
   return (bearing + 360) % 360
 }
 

@@ -21,7 +21,7 @@ export const loadImageFixture = (filename: string): Buffer => {
  * Create a mock FormData with an image
  */
 export const createMockFormData = (imageBuffer: Buffer, filename: string): FormData => {
-  const blob = new Blob([imageBuffer], { type: 'image/jpeg' })
+  const blob = new Blob([new Uint8Array(imageBuffer)], { type: 'image/jpeg' })
   const formData = new FormData()
   formData.append('image', blob, filename)
   return formData

@@ -286,7 +286,7 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
 
   return (
     <div className="p-4 border rounded-xl shadow-sm bg-white max-w-md mx-auto space-y-4">
-      <h2 className="text-xl font-bold text-green-700">🌿 স্মার্ট স্ক্যানার</h2>
+      <h2 className="text-xl font-bold text-green-700">🤖 AI নিউরাল স্ক্যানার (Diagnostic Vision)</h2>
 
       {/* Land selector */}
       <div>
@@ -345,7 +345,7 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
             : "bg-green-600 hover:bg-green-700"
         }`}
       >
-        {loading ? "🔍 বিশ্লেষণ করা হচ্ছে..." : "স্ক্যান করুন"}
+        {loading ? "⚙️ মডেল ইনফারেন্স চলছে..." : "AI বিশ্লেষণ শুরু করুন"}
       </button>
 
       {/* Survey gate block */}

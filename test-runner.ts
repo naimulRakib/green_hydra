@@ -96,6 +96,7 @@ const TEST_SCENARIOS: TestScenario[] = [
 /**
  * Validates test results against expected outcomes
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function validateTestResult(scenario: TestScenario, actual: any): TestResult {
   const matchDetails: string[] = [];
   let passed = true;

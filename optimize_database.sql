@@ -1,3 +1,0 @@
--- This file is intentionally empty.
--- Reserved for future use.
--- Last reviewed: 2026-03-23

@@ -221,6 +221,13 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
   const myLocCircleRef  = useRef<unknown>(null);
   const drawRef         = useRef<DrawState>({ active: false, coords: [], areaM2: 0 });
 
+  // Track setTimeout IDs so we can cancel on unmount
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
+  }, [])
+
+  // Keep drawRef in sync with draw state (allows click handlers to read latest value without closure staleness)
   useEffect(() => { drawRef.current = draw; }, [draw]);
 
   // ── Load Leaflet once ─────────────────────────────────────────────
@@ -623,7 +630,8 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       setLandForm(f => ({ land_name: "", land_name_bn: "", crop_id: "", zone_id: f.zone_id, notes_bn: "" }));
       clearDraw();
       await fetchPlots();
-      setTimeout(() => setSuccess(null), 5000);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setSuccess(null), 5000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError("সংরক্ষণ ব্যর্থ: " + msg);
@@ -654,7 +662,8 @@ export default function LandRegistration({ farmerId }: { farmerId: string }) {
       setSprayForm(f => ({ ...f, chemical_name: "", chemical_name_bn: "", active_ingredient: "", dose_per_bigha: "", notes_bn: "" }));
       await fetchPlots();
       setTab("digest");
-      setTimeout(() => setSuccess(null), 5000);
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => setSuccess(null), 5000);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
       setError("স্প্রে সংরক্ষণ ব্যর্থ: " + msg);

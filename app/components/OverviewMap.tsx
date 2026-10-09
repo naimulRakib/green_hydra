@@ -280,6 +280,9 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   const plotLayerMapRef        = useRef<Map<string, unknown>>(new Map())
   const communitySprayLayersRef = useRef<unknown[]>([])
   const satelliteLayersRef = useRef<unknown[]>([])
+  // Mounted flag — prevents setState on unmounted component
+  const mountedRef = useRef(true)
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false } }, [])
 
   // ── Load Leaflet once (DOM-based check, safe across HMR / StrictMode) ───────
   useEffect(() => {
@@ -326,6 +329,12 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         100%{ box-shadow: 0 0 0 0   rgba(59,130,246,0);  }
       }
       @keyframes omSpin { to { transform: rotate(360deg); } }
+      @keyframes scan {
+        0%   { transform: translateY(0); }
+        50%  { transform: translateY(100px); opacity: 0; }
+        51%  { transform: translateY(-100px); opacity: 0; }
+        100% { transform: translateY(0); opacity: 1; }
+      }
     `
     document.head.appendChild(s)
   }, [])
@@ -349,28 +358,33 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
       ? [localLat, localLng] : [23.8103, 90.2700]
 
     const map = L.map(mapDivRef.current as HTMLElement, { center, zoom: 13, zoomControl: true })
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors', maxZoom: 19,
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'NASA / Esri World Imagery', maxZoom: 19,
     }).addTo(map)
 
     mapRef.current = map
 
-    setTimeout(() => {
-      setMapInitialized(true)
-      setLeafletMap(map)
-    }, 0)
+    // Use rAF instead of setTimeout so state update is tied to paint cycle
+    const raf = requestAnimationFrame(() => {
+      if (mountedRef.current) {
+        setMapInitialized(true)
+        setLeafletMap(map)
+      }
+    })
 
     return () => {
-      // Avoid setState directly in effect cleanup
-      setTimeout(() => {
-        setMapInitialized(false)
-        setLeafletMap(null)
-      }, 0)
+      cancelAnimationFrame(raf)
       // Null ref FIRST so any in-flight layer effects see null and bail out
       mapRef.current = null
       plotLayersRef.current = []
       plumeLayers.current   = []
       communitySprayLayersRef.current = []
+      satelliteLayersRef.current = []
+      // Clear state only if still mounted
+      if (mountedRef.current) {
+        setMapInitialized(false)
+        setLeafletMap(null)
+      }
       try { map.remove() } catch {}
     }
   }, [mapReady])
@@ -528,10 +542,10 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 
         const layer = L.geoJSON(geo, {
           style: {
-            color:       (landInAnyPlume || isSelected) ? '#dc2626' : (fillColor),
+            color:       (landInAnyPlume || isSelected) ? '#ff0000' : (fillColor), // NDVI / GIS borders
             fillColor,
-            fillOpacity: (plot.spray_active || isSelected) ? 0.40 : 0.20,
-            weight:      (landInAnyPlume || isSelected) ? 4 : 3,
+            fillOpacity: (plot.spray_active || isSelected) ? 0.70 : 0.40, // High contrast for GIS
+            weight:      (landInAnyPlume || isSelected) ? 4 : 2,
             dashArray:   plot.spray_active ? undefined : '4 4',
           },
         })
@@ -587,6 +601,14 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
 
       } catch {}
     })
+    // Cleanup: remove all plot layers on re-run
+    return () => {
+      const m = mapRef.current
+      if (!m) return
+      plotLayersRef.current.forEach(l => { try { (m as LeafletMapLike).removeLayer(l) } catch {} })
+      plotLayersRef.current = []
+      plotLayerMapRef.current.clear()
+    }
   }, [plots, hotspots, windFromDeg, windSpeedKmh, activeLandId, mapInitialized])
 
   // ── Community spray layers (other farmers' active sprays) ─────────
@@ -630,6 +652,12 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         }
       } catch {}
     })
+    return () => {
+      const m = mapRef.current
+      if (!m) return
+      communitySprayLayersRef.current.forEach(l => { try { (m as LeafletMapLike).removeLayer(l) } catch {} })
+      communitySprayLayersRef.current = []
+    }
   }, [communitySpray, mapInitialized])
 
   // ── Satellite water data layer ─────────────────────────────────────
@@ -812,6 +840,13 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
       }).addTo(map)
       satelliteLayersRef.current.push(labelMarker)
     })
+
+    return () => {
+      const m = mapRef.current
+      if (!m) return
+      satelliteLayersRef.current.forEach(l => { try { (m as LeafletMapLike).removeLayer(l) } catch {} })
+      satelliteLayersRef.current = []
+    }
   }, [satelliteData, mapInitialized])
 
   // ── Industrial plume layers ───────────────────────────────────────
@@ -966,6 +1001,12 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
         .addTo(map)
       plumeLayers.current.push(marker)
     })
+    return () => {
+      const m = mapRef.current
+      if (!m) return
+      plumeLayers.current.forEach(l => { try { (m as LeafletMapLike).removeLayer(l) } catch {} })
+      plumeLayers.current = []
+    }
   }, [hotspots, windFromDeg, windSpeedKmh, localLat, localLng, mapInitialized])
 
   // ── Expose flyToPlot to parent via ref ──────────────────────────
@@ -1068,23 +1109,24 @@ const OverviewMap = forwardRef<OverviewMapHandle, Props>(function OverviewMap({
   const windToCardinal   = windDirs[Math.round(windToDeg_display / 45) % 8]
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-[#0b101e] rounded-2xl border border-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.15)] overflow-hidden">
 
       {/* ── Header ── */}
-      <div className="px-5 py-3.5 border-b border-gray-100">
-        <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="px-5 py-3.5 border-b border-cyan-500/20 bg-black/60 relative overflow-hidden">
+        {/* Radar Scanning Line Effect */}
+        <div className="absolute top-0 left-0 w-full h-[2px] bg-cyan-400/50 shadow-[0_0_10px_#22d3ee] animate-[scan_3s_ease-in-out_infinite]" />
+        <div className="flex items-start justify-between gap-3 flex-wrap relative z-10">
           <div>
-            <h3 className="text-sm font-semibold text-gray-800 flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${(hasPlumeFarm || landsInPlume.length > 0) ? 'bg-red-500 animate-pulse' : 'bg-green-500'}`} />
-              খামার ও জমির মানচিত্র
-              <span className="text-xs font-normal text-gray-400">· ১৫ কিমি ব্যাসার্ধ</span>
+            <h3 className="text-sm font-semibold text-cyan-400 flex items-center gap-2 font-mono tracking-widest uppercase shadow-sm">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${(hasPlumeFarm || landsInPlume.length > 0) ? 'bg-red-500 animate-[pulse_0.5s_ease-in-out_infinite] shadow-[0_0_10px_#ef4444]' : 'bg-green-500 shadow-[0_0_10px_#22c55e]'}`} />
+              NASA Earth Data: GIS & NDVI Overview
+              <span className="text-xs font-normal text-cyan-700">· 15km RADAR LOCK</span>
             </h3>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-cyan-500/80 mt-0.5 font-mono">
               {localLat && localLng
-                ? `আমার খামার: ${localLat.toFixed(4)}, ${localLng.toFixed(4)} · `
-                : 'অবস্থান সেট করুন · '}
-              বায়ু {windFromCardinal} থেকে → {windToCardinal}মুখী ({windToDeg_display}°)
-              {windSpeedKmh < 2 ? ' · শান্ত' : ` · ${windSpeedKmh} km/h`}
+                ? `TARGET LOCK: [${localLat.toFixed(4)}, ${localLng.toFixed(4)}] · `
+                : 'AWAITING COORDS · '}
+              WIND VECTOR: {windToDeg_display}° ({windSpeedKmh < 2 ? 'CALM' : `${windSpeedKmh} KM/H`}) · NDVI SCAN: ACTIVE
             </p>
           </div>
           <div className="flex items-center gap-1.5 flex-wrap">
