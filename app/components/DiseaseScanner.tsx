@@ -1373,9 +1373,9 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
               <div className="space-y-4">
                 <div className="p-5 bg-neutral-900 text-white rounded-2xl space-y-4">
                   <div className="flex items-center justify-between border-b border-neutral-800 pb-3">
-                    <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <h4 className="text-sm font-bold text-white flex items-center gap-2" style={{ color: '#ffffff' }}>
                       <FileText className="w-4 h-4 text-emerald-400" />
-                      <span>বৈজ্ঞানিক গবেষণা মেটাডেটা ও অডিট লগ (Research Dossier)</span>
+                      <span className="text-white" style={{ color: '#ffffff' }}>বৈজ্ঞানিক গবেষণা মেটাডেটা ও অডিট লগ (Research Dossier)</span>
                     </h4>
                     <div className="flex gap-2">
                       <button
