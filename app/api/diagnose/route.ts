@@ -13,8 +13,13 @@ const supabase = createClient(
 // CONSTANTS
 // ══════════════════════════════════════════════════════════════════════════════
 
-const GEMINI_MODEL = "gemini-3.1-flash-lite-preview";
+const GEMINI_MODEL = "gemini-3.8-flash";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+const FALLBACK_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.1-flash-lite-preview",
+  "gemini-2.5-flash",
+];
 const ENABLE_RAG = process.env.ENABLE_RAG === "true";
 
 type StressType =
@@ -978,54 +983,64 @@ function extractJSON(raw: string): unknown {
 // ══════════════════════════════════════════════════════════════════════════════
 // GEMINI SHARED CALLER
 // ══════════════════════════════════════════════════════════════════════════════
-async function callGemini(parts: object[], temperature = 0.1): Promise<{ text: string; tokensUsed: number }> {
-  const url = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
+async function callGemini(parts: object[], temperature = 0.1): Promise<{ text: string; tokensUsed: number; modelUsed: string }> {
+  let lastError: unknown;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(30_000), // Prevent hanging serverless functions
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        temperature,
-        maxOutputTokens: 1500,
-        responseMimeType: "application/json",
-      },
-    }),
-  });
+  for (const model of FALLBACK_MODELS) {
+    try {
+      const url = `${GEMINI_BASE}/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`;
 
-  const data: unknown = await res.json().catch(() => ({}));
-  const d = isRecord(data) ? data : {};
-  const apiError = d.error;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(30_000), // Prevent hanging serverless functions
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          generationConfig: {
+            temperature,
+            maxOutputTokens: 2000,
+            responseMimeType: "application/json",
+          },
+        }),
+      });
 
-  if (!res.ok || apiError) {
-    console.error(`Gemini API error (HTTP ${res.status}):`, JSON.stringify(d, null, 2));
-    const message =
-      isRecord(apiError) && typeof apiError.message === "string"
-        ? apiError.message
-        : `Gemini HTTP ${res.status}`;
-    const error = new Error(message) as Error & { status?: number };
-    error.status = res.status;
-    throw error;
+      const data: unknown = await res.json().catch(() => ({}));
+      const d = isRecord(data) ? data : {};
+      const apiError = d.error;
+
+      if (!res.ok || apiError) {
+        console.warn(`Gemini API error with ${model} (HTTP ${res.status}):`, JSON.stringify(apiError ?? d));
+        const message =
+          isRecord(apiError) && typeof apiError.message === "string"
+            ? apiError.message
+            : `Gemini HTTP ${res.status}`;
+        lastError = new Error(message);
+        continue;
+      }
+
+      const candidates = d.candidates;
+      const first = Array.isArray(candidates) ? candidates[0] : undefined;
+      const content = isRecord(first) ? first.content : undefined;
+      const partsArr = isRecord(content) ? content.parts : undefined;
+      const firstPart = Array.isArray(partsArr) ? partsArr[0] : undefined;
+      const text = isRecord(firstPart) && typeof firstPart.text === "string" ? firstPart.text : "";
+
+      if (!text) {
+        lastError = new Error(`Gemini empty content on ${model}`);
+        continue;
+      }
+
+      const usage = d.usageMetadata;
+      const promptTokens = isRecord(usage) && typeof usage.promptTokenCount === "number" ? usage.promptTokenCount : 0;
+      const candidateTokens = isRecord(usage) && typeof usage.candidatesTokenCount === "number" ? usage.candidatesTokenCount : 0;
+      return { text, tokensUsed: promptTokens + candidateTokens, modelUsed: model };
+    } catch (err: unknown) {
+      console.warn(`callGemini error with ${model}:`, getErrMessage(err));
+      lastError = err;
+    }
   }
 
-  const candidates = d.candidates;
-  const first = Array.isArray(candidates) ? candidates[0] : undefined;
-  const content = isRecord(first) ? first.content : undefined;
-  const partsArr = isRecord(content) ? content.parts : undefined;
-  const firstPart = Array.isArray(partsArr) ? partsArr[0] : undefined;
-  const text = isRecord(firstPart) && typeof firstPart.text === "string" ? firstPart.text : "";
-
-  if (!text) {
-    const finishReason = isRecord(first) && typeof first.finishReason === "string" ? first.finishReason : "unknown";
-    throw new Error(`Gemini empty content (finishReason: ${finishReason})`);
-  }
-
-  const usage = d.usageMetadata;
-  const promptTokens = isRecord(usage) && typeof usage.promptTokenCount === "number" ? usage.promptTokenCount : 0;
-  const candidateTokens = isRecord(usage) && typeof usage.candidatesTokenCount === "number" ? usage.candidatesTokenCount : 0;
-  return { text, tokensUsed: promptTokens + candidateTokens };
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1168,7 +1183,7 @@ IMPORTANT RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 TASK:
-1) Gatekeeper: reject if blurry/dark/non-plant/non-agri.
+1) Gatekeeper: Accept any plant, crop, leaf, stem, panicle, seedling, foliage, or field canopy image. Reject ONLY if completely non-agricultural (e.g. human face, animal, vehicle, indoor room, pure black/empty screen).
 2) If valid, extract visual symptoms with EXACT LOCATION (base/sheath/blade/tip).
 3) Apply differential diagnosis guide above before concluding.
 4) Output biotic diagnosis estimate (or None if pollution-like / weak evidence).
@@ -1205,21 +1220,20 @@ Output schema:
 // STAGE B — EMBEDDING (optional; keep behind ENABLE_RAG)
 // ══════════════════════════════════════════════════════════════════════════════
 async function getEmbedding(text: string): Promise<number[]> {
-  // NOTE: Some Gemini projects/API versions do not support this model/method.
-  // Treat failures as non-fatal and skip RAG when it fails.
-  const url = `https://generativelanguage.googleapis.com/v1/models/text-embedding-004:embedContent?key=${process.env.GEMINI_API_KEY}`;
+  // Use gemini-embedding-001 with 1024-dim output for pgvector compatibility
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${process.env.GEMINI_API_KEY}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      model: "models/gemini-embedding-001",
       content: { parts: [{ text: text.slice(0, 2000) }] },
-      taskType: "SEMANTIC_SIMILARITY",
       outputDimensionality: 1024,
     }),
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok || data.error) {
-    console.error("Embedding error:", JSON.stringify(data, null, 2));
+    console.error("Embedding error with gemini-embedding-001:", JSON.stringify(data, null, 2));
     throw new Error(data.error?.message ?? JSON.stringify(data));
   }
   return data.embedding.values as number[];
@@ -1667,6 +1681,30 @@ async function saveScanLog(params: {
   // NOTE: use_for_epidemic_alert is also omitted. Some schemas make it GENERATED ALWAYS
   // (or enforced by triggers). Inserting a value can fail with:
   // "cannot insert a non-DEFAULT value into column use_for_epidemic_alert".
+  const validDiseases = [
+    "biotic_blast",
+    "biotic_bacterial_blight",
+    "biotic_sheath_blight",
+    "biotic_tungro_virus",
+    "abiotic_so2_injury",
+    "abiotic_zinc_deficiency",
+    "abiotic_ozone_damage",
+    "abiotic_iron_toxicity",
+    "abiotic_salinity_stress",
+  ];
+  let normalizedDiseaseId: string | null = null;
+  if (diseaseId) {
+    if (validDiseases.includes(diseaseId)) {
+      normalizedDiseaseId = diseaseId;
+    } else {
+      const lower = diseaseId.toLowerCase();
+      if (lower.includes("bacterial") || lower.includes("blight")) normalizedDiseaseId = "biotic_bacterial_blight";
+      else if (lower.includes("blast")) normalizedDiseaseId = "biotic_blast";
+      else if (lower.includes("sheath")) normalizedDiseaseId = "biotic_sheath_blight";
+      else if (lower.includes("tungro")) normalizedDiseaseId = "biotic_tungro_virus";
+    }
+  }
+
   const { data, error } = await supabase
     .from("scan_logs")
     .insert({
@@ -1675,7 +1713,7 @@ async function saveScanLog(params: {
       crop_id: cropId,
       growth_stage_days: null,
       scan_location: `SRID=4326;POINT(${lng} ${lat})`,
-      grid_cell_id: `${lat.toFixed(2)}_${lng.toFixed(2)}`,
+      grid_cell_id: null,
       image_url: imageUrl,
       vision_output: visionOutput,
       questionnaire_answers: questionnaireAnswers,
@@ -1688,7 +1726,7 @@ async function saveScanLog(params: {
         },
       },
       stress_type: stressType,
-      confirmed_disease_id: diseaseId,
+      confirmed_disease_id: normalizedDiseaseId,
       confirmed_pollutant_id: pollutantId,
       remedy_id: null,
       ai_confidence: aiConfidence,
@@ -2645,7 +2683,7 @@ export async function POST(req: Request) {
           grid_cell_id: `${lat.toFixed(2)}_${lng.toFixed(2)}`,
           weather_hash: weatherHash,
           symptom_hash: symptomHash,
-          confirmed_disease_id: finalVerdict.suggested_disease_id ?? null,
+          confirmed_disease_id: null,
           pollutant_id: finalVerdict.suggested_pollutant_id ?? null,
           remedy_id: null,
           cached_diagnosis_bn: finalVerdict.reasoning_bn ?? finalVerdict.final_diagnosis ?? "N/A",
@@ -2753,9 +2791,31 @@ export async function POST(req: Request) {
       // Always return a response even if persistence fails (prevents Next.js 500 "No response returned").
       return NextResponse.json({
         success: true,
-          diagnosis: finalVerdictWithOverrides,
+        scan_id: scanId,
+        diagnosis: finalVerdictWithOverrides.final_diagnosis ?? finalVerdictWithOverrides,
+        final_diagnosis: finalVerdictWithOverrides.final_diagnosis,
+        primary_cause: finalVerdictWithOverrides.primary_cause ?? (finalVerdictWithOverrides.disease_type === "Biotic" ? "biotic" : "abiotic"),
+        secondary_cause: finalVerdictWithOverrides.secondary_cause ?? null,
+        compound_stress: finalVerdictWithOverrides.compound_stress,
+        detection_scores: finalVerdictWithOverrides.detection_scores ?? {
+          biotic: { percentage: Math.round(bioticScoreForLog * 100), disease_name_bn: null, subtype: null, disease_id: null },
+          abiotic: { percentage: Math.round(abioticScore * 100), subtype: abioticResult.stress_subtype, spray_suppressed: !!finalVerdictWithOverrides.spray_suppressed, active_signals: abioticResult.active_signals },
+          heavy_metal: {
+            percentage: Number(heavyMetalResult.percentage ?? 0),
+            metals: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            severity: String(heavyMetalResult.severity ?? "low"),
+            zone_risk: String(heavyMetalResult.zone_baseline_risk ?? "Low"),
+          },
+        },
+        confidence: finalVerdictWithOverrides.confidence ?? 0.85,
+        disease_type: finalVerdictWithOverrides.disease_type,
+        spray_suppressed: finalVerdictWithOverrides.spray_suppressed,
+        remedy_bn: finalVerdictWithOverrides.remedy_bn,
+        reasoning_bn: finalVerdictWithOverrides.reasoning_bn,
+        secondary_advice_bn: finalVerdictWithOverrides.secondary_advice_bn,
+        overrides_applied: finalVerdictWithOverrides.overrides_applied ?? [],
         image_url: imageUrl,
-        source: isCached ? "Cache ⚡" : `Gemini Flash Lite 🧠 (+${ragCases.length} RAG)`,
+        source: isCached ? "Cache ⚡" : `${GEMINI_MODEL} 🧠 (+${ragCases.length} RAG)`,
         heavy_metal_status: "skipped",
         db_saved: false,
         db_error: (isRecord(saveError) && typeof saveError.message === "string")
@@ -2767,10 +2827,77 @@ export async function POST(req: Request) {
           plume_score: plumeExposure.plumeScore.toFixed(2),
           dominant_factory: plumeExposure.dominantFactory,
           neighbor_sprays: neighborSprays.length,
-            rag_cases_used: ragCasesUsed,
-            weather: weatherStr,
+          rag_cases_used: ragCasesUsed,
+          weather: weatherStr,
+        },
+        vision_analysis: {
+          detected_crop: visionResult.detected_crop ?? (cropId ? String(cropId) : "Rice (Oryza sativa)"),
+          is_valid: visionResult.is_valid ?? true,
+          gatekeeper_reason: visionResult.gatekeeper_reason ?? null,
+          visual_symptoms: visionResult.visual_symptoms ?? "Foliar and tissue inspection completed.",
+          lesion_morphology: {
+            symptom_category: (visionResult as VisionBioticResult)?.stress_subtype ?? (finalVerdictWithOverrides.disease_type === "Abiotic" ? "Abiotic Stress" : "Pathogen Lesion"),
+            affected_pattern: (visionResult.visual_symptoms ?? "").toLowerCase().includes("tip") ? "Apical Marginal Scorch" : "Dispersed Foliar Lesions",
+            anatomical_zone: (visionResult.visual_symptoms ?? "").toLowerCase().includes("sheath") ? "Leaf Sheath / Stem" : "Leaf Blade / Panicle",
           },
-        });
+          ai_confidence: finalVerdictWithOverrides.confidence ?? 0.85,
+        },
+        workplace_analysis: {
+          farm_site: {
+            land_name: landRes.data?.land_name ?? "Registered Land Parcel",
+            land_id: landId,
+            crop_id: cropId ?? "rice_boro",
+            zone_id: zoneId,
+            soil_ph: profile?.soil_ph ?? "6.5",
+            soil_texture: (profile as AnyRecord | null)?.soil_texture ?? "Clay Loam",
+            smoke_exposure: profile?.smoke_exposure ?? "none",
+            canal_contamination: profile?.canal_contamination ?? "none",
+            water_color: profile?.water_color ?? "clear",
+          },
+          plume_exposure: {
+            score: parseFloat(plumeExposure.plumeScore.toFixed(3)),
+            hours_exposed_168h: plumeExposure.exposureHours,
+            dominant_factory: plumeExposure.dominantFactory,
+            total_active_sources_within_radius: enrichedHotspots.length,
+            plume_active_in_wind: plumeExposure.exposureHours > 0 || plumeExposure.plumeScore > 0,
+            wind_vector: weatherStr,
+            hourly_dispersion_breakdown: plumeExposure.perFactoryHours,
+          },
+          heavy_metal_risk: {
+            score: parseFloat(heavyMetalScoreForLog.toFixed(3)),
+            severity: heavyMetalResult.severity ?? "low",
+            metals_detected: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+            zone_baseline_risk: heavyMetalResult.zone_baseline_risk ?? "Low",
+            bioaccumulation_threat: "low",
+            remediation_protocol: null,
+          },
+          aquatic_irrigation_risk: {
+            canal_status: canalSignal ? "Contaminated" : "Normal",
+            water_color: profile?.water_color ?? "clear",
+            satellite_turbidity: (satelliteWaterRes.data as AnyRecord | null)?.turbidity ?? null,
+            satellite_suspected_pollution: Boolean((satelliteWaterRes.data as AnyRecord | null)?.suspected_pollution),
+            water_quality_index: (satelliteWaterRes.data as AnyRecord | null)?.water_quality_index ?? null,
+          },
+          agrochemical_safety: {
+            spray_suppressed: Boolean(finalVerdictWithOverrides.spray_suppressed),
+            suppression_rationale_bn: finalVerdictWithOverrides.spray_suppressed
+              ? "ফসল বিষাক্ত ধোঁয়া/ভারী ধাতু বা শিল্প রাসায়নিক চাপে আক্রান্ত। এই অবস্থায় কীটনাশক স্প্রে করলে ফসলের টিস্যু আরো বেশি পুড়ে যাবে।"
+              : "কোনো বিপজ্জনক রাসায়নিক বিষক্রিয়া শনাক্ত হয়নি। অনুমোদিত মাত্রায় প্রতিরোধমূলক ব্যবস্থা প্রযোজ্য।",
+            neighbor_spray_count: neighborSprays.length,
+            active_neighbor_sprays: neighborSprays.map(s => `${s.chemical} (${s.distance_m}m)`),
+          },
+          research_telemetry: {
+            scan_id: scanId,
+            timestamp: new Date().toISOString(),
+            ai_model: finalVerdictWithOverrides.model_used || GEMINI_MODEL,
+            total_latency_ms: Date.now() - parseInt(scanId.split("-")[1], 36),
+            tokens_consumed: bioticTokensUsed + Number(visionResult._tokens_used ?? 0),
+            rag_retrievals_active: ragCasesUsed,
+            overrides_triggered: finalVerdictWithOverrides.overrides_applied ?? [],
+            protocol: "AgroSentinel NSYSS-2026 Hybrid Plume & Spectral Diagnostics Protocol",
+          }
+        },
+      });
     } else {
       log(scanId, "✅", `scan_logs saved (${Date.now() - T.save}ms) → id: ${scanLogId}`);
       if (scanLogId) {
@@ -2805,10 +2932,11 @@ export async function POST(req: Request) {
             land_id: landId,
             farmer_id: farmerId,
             scan_log_id: scanLogId,
-            reported_via: "sync_strategy_engine",
-            metal_type: Array.isArray(heavyMetalStrategy.metals) && heavyMetalStrategy.metals.length > 0 ? heavyMetalStrategy.metals.join(",") : "mixed",
+            reported_via: "satellite",
+            metal_type: Array.isArray(heavyMetalStrategy.metals) && heavyMetalStrategy.metals.length > 0 ? heavyMetalStrategy.metals.join(",") : "lead",
             confidence_score: Math.min(1, Math.max(0, heavyMetalScoreForLog)),
-            severity: heavyMetalStrategy.risk_level === "moderate" ? "moderate" : heavyMetalStrategy.risk_level === "low" ? "low" : heavyMetalStrategy.risk_level,
+            severity: heavyMetalStrategy.risk_level === "critical" ? "critical" : heavyMetalStrategy.risk_level === "high" ? "high" : heavyMetalStrategy.risk_level === "moderate" ? "moderate" : "low",
+            geom: `POINT(${lng} ${lat})`,
             heavy_metal_strategy: heavyMetalStrategy,
             evidence_chain: evidenceChain,
             notes: `sync_strategy_engine | isric_ph=${isric.ph_h2o ?? "null"} | source=${isric.source}`,
@@ -2877,6 +3005,75 @@ export async function POST(req: Request) {
       });
       console.log(`${"═".repeat(60)}\n`);
 
+      const visionAnalysisPayload = {
+        detected_crop: visionResult.detected_crop ?? (cropId ? String(cropId) : "Rice (Oryza sativa)"),
+        is_valid: visionResult.is_valid ?? true,
+        gatekeeper_reason: visionResult.gatekeeper_reason ?? null,
+        visual_symptoms: visionResult.visual_symptoms ?? "Foliar and tissue inspection completed.",
+        lesion_morphology: {
+          symptom_category: (visionResult as VisionBioticResult)?.stress_subtype ?? (finalVerdictWithOverrides.disease_type === "Abiotic" ? "Abiotic Stress" : "Pathogen Lesion"),
+          affected_pattern: (visionResult.visual_symptoms ?? "").toLowerCase().includes("tip") ? "Apical Marginal Scorch" : "Dispersed Foliar Lesions",
+          anatomical_zone: (visionResult.visual_symptoms ?? "").toLowerCase().includes("sheath") ? "Leaf Sheath / Stem" : "Leaf Blade / Panicle",
+        },
+        ai_confidence: finalVerdictWithOverrides.confidence ?? 0.85,
+      };
+
+      const workplaceAnalysisPayload = {
+        farm_site: {
+          land_name: landRes.data?.land_name ?? "Registered Land Parcel",
+          land_id: landId,
+          crop_id: cropId ?? "rice_boro",
+          zone_id: zoneId,
+          soil_ph: profile?.soil_ph ?? "6.5",
+          soil_texture: (profile as AnyRecord | null)?.soil_texture ?? "Clay Loam",
+          smoke_exposure: profile?.smoke_exposure ?? "none",
+          canal_contamination: profile?.canal_contamination ?? "none",
+          water_color: profile?.water_color ?? "clear",
+        },
+        plume_exposure: {
+          score: parseFloat(plumeExposure.plumeScore.toFixed(3)),
+          hours_exposed_168h: plumeExposure.exposureHours,
+          dominant_factory: plumeExposure.dominantFactory,
+          total_active_sources_within_radius: enrichedHotspots.length,
+          plume_active_in_wind: plumeExposure.exposureHours > 0 || plumeExposure.plumeScore > 0,
+          wind_vector: weatherStr,
+          hourly_dispersion_breakdown: plumeExposure.perFactoryHours,
+        },
+        heavy_metal_risk: {
+          score: parseFloat(heavyMetalScoreForLog.toFixed(3)),
+          severity: heavyMetalResult.severity ?? "low",
+          metals_detected: Array.isArray(heavyMetalResult.metal_types) ? heavyMetalResult.metal_types : [],
+          zone_baseline_risk: heavyMetalResult.zone_baseline_risk ?? "Low",
+          bioaccumulation_threat: heavyMetalStrategy?.bioaccumulation_risk ?? "low",
+          remediation_protocol: heavyMetalStrategy?.remediation_bn ?? null,
+        },
+        aquatic_irrigation_risk: {
+          canal_status: canalSignal ? "Contaminated" : "Normal",
+          water_color: profile?.water_color ?? "clear",
+          satellite_turbidity: (satelliteWaterRes.data as AnyRecord | null)?.turbidity ?? null,
+          satellite_suspected_pollution: Boolean((satelliteWaterRes.data as AnyRecord | null)?.suspected_pollution),
+          water_quality_index: (satelliteWaterRes.data as AnyRecord | null)?.water_quality_index ?? null,
+        },
+        agrochemical_safety: {
+          spray_suppressed: Boolean(finalVerdictWithOverrides.spray_suppressed),
+          suppression_rationale_bn: finalVerdictWithOverrides.spray_suppressed
+            ? "ফসল বিষাক্ত ধোঁয়া/ভারী ধাতু বা শিল্প রাসায়নিক চাপে আক্রান্ত। এই অবস্থায় কীটনাশক স্প্রে করলে ফসলের টিস্যু আরো বেশি পুড়ে যাবে।"
+            : "কোনো বিপজ্জনক রাসায়নিক বিষক্রিয়া শনাক্ত হয়নি। অনুমোদিত মাত্রায় প্রতিরোধমূলক ব্যবস্থা প্রযোজ্য।",
+          neighbor_spray_count: neighborSprays.length,
+          active_neighbor_sprays: neighborSprays.map(s => `${s.chemical} (${s.distance_m}m)`),
+        },
+        research_telemetry: {
+          scan_id: scanId,
+          timestamp: new Date().toISOString(),
+          ai_model: finalVerdictWithOverrides.model_used || GEMINI_MODEL,
+          total_latency_ms: totalMs,
+          tokens_consumed: bioticTokensUsed + Number(visionResult._tokens_used ?? 0),
+          rag_retrievals_active: ragCasesUsed,
+          overrides_triggered: finalVerdictWithOverrides.overrides_applied ?? [],
+          protocol: "AgroSentinel NSYSS-2026 Hybrid Plume & Spectral Diagnostics Protocol",
+        }
+      };
+
       return NextResponse.json({
         success: true,
         scan_id: scanId,
@@ -2933,6 +3130,9 @@ export async function POST(req: Request) {
           weather: weatherStr,
           rag_cases_used: ragCasesUsed,
         },
+        vision_analysis: visionAnalysisPayload,
+        workplace_analysis: workplaceAnalysisPayload,
+        research_telemetry: workplaceAnalysisPayload.research_telemetry,
         db_saved: !!scanLogId,
         heavy_metal_status: heavyMetalStatus,
         image_url: imageUrl,

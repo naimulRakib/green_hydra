@@ -30,6 +30,7 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.pathname.startsWith('/_next/')) return;
 
   if (request.mode === 'navigate') {
     event.respondWith(

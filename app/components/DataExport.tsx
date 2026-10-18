@@ -201,6 +201,160 @@ export default function DataExport({ hasConsent }: Props) {
           )}
         </div>
       )}
+      {/* ── Institutional B2B REST APIs ───────────────────────────────── */}
+      <div className="border-t border-gray-100 bg-neutral-900 text-white p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <span className="text-[10px] font-mono font-bold text-emerald-400 uppercase tracking-widest block">
+              ENTERPRISE B2B INTEGRATION
+            </span>
+            <h4 className="text-sm font-bold text-white flex items-center gap-2 mt-0.5">
+              <span>🏛️ সরকারি, এনজিও, বীমা ও রপ্তানিকারক লাইভ REST API</span>
+            </h4>
+          </div>
+          <span className="text-[11px] font-mono bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">
+            v1.0 Live
+          </span>
+        </div>
+
+        <p className="text-xs text-neutral-300 leading-relaxed">
+          পরিবেশ অধিদপ্তর (DoE), কৃষি সম্প্রসারণ অধিদপ্তর (DAE), গ্রিন ডেল্টা ইন্স্যুরেন্স এবং ইউরোপীয় ইউনিয়নের GAP রপ্তানি মান যাচাইয়ের জন্য নিরাপদ ডেটা ফিড।
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* Government API */}
+          <div className="p-3 bg-neutral-800/80 rounded-xl border border-neutral-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                <span>🏛️</span> পরিবেশ ও কৃষি মন্ত্রণালয় (DoE / DAE)
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400">ROLE: government</span>
+            </div>
+            <div className="text-[11px] font-mono text-neutral-300 bg-black/50 p-2 rounded break-all select-all">
+              Key: GOVT-DOE-BD-2026-KEY-991
+            </div>
+            <div className="flex gap-2 pt-0.5">
+              <a
+                href="/api/export-partners?role=government&apiKey=GOVT-DOE-BD-2026-KEY-991"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-white font-semibold transition-colors"
+              >
+                JSON ভিউ ↗
+              </a>
+              <a
+                href="/api/export-partners?role=government&apiKey=GOVT-DOE-BD-2026-KEY-991&format=csv"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 rounded text-white font-semibold transition-colors"
+              >
+                CSV এক্সপোর্ট ↗
+              </a>
+            </div>
+          </div>
+
+          {/* Insurance API */}
+          <div className="p-3 bg-neutral-800/80 rounded-xl border border-neutral-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <span>🏦</span> শস্য বীমা কোম্পানি (Green Delta)
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400">ROLE: insurance</span>
+            </div>
+            <div className="text-[11px] font-mono text-neutral-300 bg-black/50 p-2 rounded break-all select-all">
+              Key: INSUR-GREEN-DELTA-2026-KEY-442
+            </div>
+            <div className="flex gap-2 pt-0.5">
+              <a
+                href="/api/export-partners?role=insurance&apiKey=INSUR-GREEN-DELTA-2026-KEY-442"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-amber-600 hover:bg-amber-500 rounded text-white font-semibold transition-colors"
+              >
+                JSON ভিউ ↗
+              </a>
+              <a
+                href="/api/export-partners?role=insurance&apiKey=INSUR-GREEN-DELTA-2026-KEY-442&format=csv"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 rounded text-white font-semibold transition-colors"
+              >
+                CSV এক্সপোর্ট ↗
+              </a>
+            </div>
+          </div>
+
+          {/* Export Certification */}
+          <div className="p-3 bg-neutral-800/80 rounded-xl border border-neutral-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-blue-300 flex items-center gap-1.5">
+                <span>📦</span> খাদ্য নিরাপত্তা ও রপ্তানি সনদ (GAP/MRL)
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400">ROLE: export_cert</span>
+            </div>
+            <div className="text-[11px] font-mono text-neutral-300 bg-black/50 p-2 rounded break-all select-all">
+              Key: EXPORT-BENGAL-AGRI-2026-KEY-773
+            </div>
+            <div className="flex gap-2 pt-0.5">
+              <a
+                href="/api/export-partners?role=export_cert&apiKey=EXPORT-BENGAL-AGRI-2026-KEY-773"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white font-semibold transition-colors"
+              >
+                JSON ভিউ ↗
+              </a>
+              <a
+                href="/api/export-partners?role=export_cert&apiKey=EXPORT-BENGAL-AGRI-2026-KEY-773&format=csv"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 rounded text-white font-semibold transition-colors"
+              >
+                CSV এক্সপোর্ট ↗
+              </a>
+            </div>
+          </div>
+
+          {/* NGO & Research */}
+          <div className="p-3 bg-neutral-800/80 rounded-xl border border-neutral-700 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
+                <span>🌍</span> কৃষি গবেষণা প্রতিষ্ঠান ও NGO (BRRI/FAO)
+              </span>
+              <span className="text-[10px] font-mono text-neutral-400">ROLE: ngo</span>
+            </div>
+            <div className="text-[11px] font-mono text-neutral-300 bg-black/50 p-2 rounded break-all select-all">
+              Key: NGO-AGRO-RESEARCH-2026-KEY-114
+            </div>
+            <div className="flex gap-2 pt-0.5">
+              <a
+                href="/api/export-partners?role=ngo&apiKey=NGO-AGRO-RESEARCH-2026-KEY-114"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-purple-600 hover:bg-purple-500 rounded text-white font-semibold transition-colors"
+              >
+                JSON ভিউ ↗
+              </a>
+              <a
+                href="/api/export-partners?role=ngo&apiKey=NGO-AGRO-RESEARCH-2026-KEY-114&format=csv"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] px-2.5 py-1 bg-neutral-700 hover:bg-neutral-600 rounded text-white font-semibold transition-colors"
+              >
+                CSV এক্সপোর্ট ↗
+              </a>
+            </div>
+          </div>
+        </div>
+
+        {/* cURL Example */}
+        <div className="p-3 bg-black/70 rounded-xl border border-neutral-800 space-y-1">
+          <span className="text-[10px] font-mono text-neutral-400 uppercase">Automated Sync cURL:</span>
+          <pre className="text-[10px] font-mono text-emerald-400 overflow-x-auto select-all">
+            curl -H &quot;x-api-key: GOVT-DOE-BD-2026-KEY-991&quot; &quot;http://localhost:3000/api/export-partners?role=government&quot;
+          </pre>
+        </div>
+      </div>
     </div>
   );
 }
