@@ -9,6 +9,7 @@ const supabase = createClient(url, key);
 const FARMER_ID = "265495c5-3095-4f20-95d5-95fa3ca9a6e7"; // farmer1@gmail.com
 const PLOT_SAVAR = "da37c2c9-0dc9-4775-93b3-ca3955e20aa3"; // Savar Plot A
 const PLOT_HEMAYETPUR = "e8b87d9d-0241-49c7-b01f-1f4185e43ea0"; // Hemayetpur Block
+const PLOT_BIOTIC = "7f9b1c20-a1b2-4c3d-8e4f-0123456789ab"; // Dhamrai Eco-Rice Field (Biotic Demo)
 
 async function seed() {
   console.log("🌱 Seeding Farmer1 demo profiles, surveys, and institutional API keys...");
@@ -103,6 +104,57 @@ async function seed() {
     await supabase.from("farm_profiles").insert(profileHemayetpur);
   }
 
+  // Plot C (Dhamrai Eco-Plot - Biotic pathogen hotspot, clean air/soil)
+  await supabase.from("farmer_lands").upsert({
+    land_id: PLOT_BIOTIC,
+    farmer_id: FARMER_ID,
+    land_name: "Dhamrai Eco-Rice Field (Biotic Demo)",
+    land_name_bn: "ধামরাই অর্গানিক ধানের জমি (বায়োটিক ডেমো)",
+    crop_id: "rice_boro",
+    zone_id: "dhaka-savar",
+    is_active: true,
+    notes_bn: "শিল্প কারখানা মুক্ত গ্রিন জোন — জৈব সার ও গভীর নলকূপের পানি",
+    boundary: "SRID=4326;POLYGON((90.1660 23.9160, 90.1670 23.9160, 90.1670 23.9170, 90.1660 23.9170, 90.1660 23.9160))"
+  }, { onConflict: "land_id" });
+
+  const profileBiotic = {
+    farmer_id: FARMER_ID,
+    land_id: PLOT_BIOTIC,
+    soil_texture: "silt_loam",
+    soil_drainage: "good",
+    soil_ph: "Normal (6.8)",
+    soil_organic: "high",
+    soil_compaction: "soft",
+    water_source: "deep_tubewell",
+    water_color: "clear",
+    water_odor: "none",
+    water_risk: "Safe",
+    crop_stage: "tillering",
+    fertilizer_pattern: "balanced_npk",
+    monoculture_years: "2_years",
+    yield_trend: "stable",
+    pest_level: "High",
+    pests_seen: ["leaf_folder", "stem_borer", "blast"],
+    weekly_weather: "sunny_humid",
+    smoke_exposure: "none",
+    canal_contamination: "none",
+    neighbor_problem: "none",
+    arsenic_risk: false,
+    iron_risk: false,
+    fish_kill: null,
+    scan_context: "CleanAir:True,Plume:Zero,Soil:Normal6.8,Water:DeepTubewellClear,Smoke:None,Canal:None,Pest:HighBacterialPathogen",
+    last_survey_week: 42,
+    last_survey_year: 2026,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data: existingBio } = await supabase.from("farm_profiles").select("id").eq("farmer_id", FARMER_ID).eq("land_id", PLOT_BIOTIC).maybeSingle();
+  if (existingBio?.id) {
+    await supabase.from("farm_profiles").update(profileBiotic).eq("id", existingBio.id);
+  } else {
+    await supabase.from("farm_profiles").insert(profileBiotic);
+  }
+
   // 3. Setup Weekly Surveys in `surveys` for Week 41 (Previous) and Week 42 (Current)
   const surveyWeeks = [
     { week: 41, submitted: "2026-10-11T10:30:00Z" },
@@ -186,6 +238,44 @@ async function seed() {
       await supabase.from("surveys").update(surveyDataB).eq("id", sB.id);
     } else {
       await supabase.from("surveys").insert(surveyDataB);
+    }
+
+    // Biotic Clean Plot survey
+    const { data: sC } = await supabase.from("surveys").select("id").eq("farmer_id", FARMER_ID).eq("land_id", PLOT_BIOTIC).eq("week_number", sw.week).eq("year", 2026).maybeSingle();
+    const surveyDataC = {
+      farmer_id: FARMER_ID,
+      land_id: PLOT_BIOTIC,
+      week_number: sw.week,
+      year: 2026,
+      crop_condition: "diseased_spots",
+      water_status: "clear_fresh",
+      smoke_observed: "none",
+      canal_smell: "none",
+      neighbor_sprayed: false,
+      answers: {
+        crop_type: "rice",
+        crop_stage: "tillering",
+        crop_variety: "brri_28",
+        soil_texture: "silt_loam",
+        water_source: "deep_tubewell",
+        water_color: "clear",
+        water_odor: "none",
+        smoke_exposure: "none",
+        canal_pollution: "none",
+        pest_damage_level: "high",
+        pests_seen: ["blast", "bacterial_blight"]
+      },
+      soil_ph_risk: "Normal",
+      water_risk: "Safe",
+      pest_level: "High",
+      env_stress: "None",
+      submitted_at: sw.submitted,
+      updated_at: sw.submitted
+    };
+    if (sC?.id) {
+      await supabase.from("surveys").update(surveyDataC).eq("id", sC.id);
+    } else {
+      await supabase.from("surveys").insert(surveyDataC);
     }
   }
 

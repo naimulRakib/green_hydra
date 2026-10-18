@@ -279,9 +279,19 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
     try {
       setActiveDemoPreset("biotic");
       setGpsMode("plot");
-      const res = await fetch("/sample_crop_leaf.jpg");
+      const cleanPlot = plots.find(
+        (p) =>
+          p.land_name?.toLowerCase().includes("dhamrai") ||
+          p.land_name?.toLowerCase().includes("eco") ||
+          p.land_name_bn?.includes("ধামরাই") ||
+          p.land_name_bn?.includes("বায়োটিক")
+      );
+      if (cleanPlot) {
+        setSelectedLandId(cleanPlot.land_id);
+      }
+      const res = await fetch("/demo_biotic_leaf.jpg");
       const blob = await res.blob();
-      const file = new File([blob], "sample_crop_leaf.jpg", { type: "image/jpeg" });
+      const file = new File([blob], "demo_biotic_leaf.jpg", { type: "image/jpeg" });
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
       const url = URL.createObjectURL(file);
       previewUrlRef.current = url;
@@ -309,9 +319,9 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
       if (savarPlot) {
         setSelectedLandId(savarPlot.land_id);
       }
-      const res = await fetch("/sample_abiotic_leaf.jpg");
+      const res = await fetch("/demo_abiotic_leaf.jpg");
       const blob = await res.blob();
-      const file = new File([blob], "sample_abiotic_leaf.jpg", { type: "image/jpeg" });
+      const file = new File([blob], "demo_abiotic_leaf.jpg", { type: "image/jpeg" });
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
       const url = URL.createObjectURL(file);
       previewUrlRef.current = url;
@@ -680,8 +690,8 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
                 >
                   <span className="text-xl shrink-0">🦠</span>
                   <div>
-                    <strong className="text-xs font-bold text-emerald-950 block">ডেমো ১: বায়োটিক রোগ</strong>
-                    <span className="text-[10px] text-gray-600 block">ব্যাকটেরিয়াল ব্লাইট / ব্লাস্ট (স্প্রে অনুমোদিত)</span>
+                    <strong className="text-xs font-bold text-emerald-950 block">ডেমো ১: বায়োটিক রোগ (Biotic)</strong>
+                    <span className="text-[10px] text-gray-600 block">ধানের ব্লাস্ট ও ব্লাইট • দূষণমুক্ত গ্রিন প্লট (০ ঘণ্টা প্লাম) • স্প্রে অনুমোদিত</span>
                   </div>
                 </button>
 
@@ -696,8 +706,8 @@ export default function DiseaseScanner({ farmerId, plots }: Props) {
                 >
                   <span className="text-xl shrink-0">🏭</span>
                   <div>
-                    <strong className="text-xs font-bold text-orange-950 block">ডেমো ২: শিল্প ধোঁয়া ও ধাতু</strong>
-                    <span className="text-[10px] text-gray-600 block">১৬৮-ঘণ্টার প্লাম + ভারি ধাতু (স্প্রে নিষিদ্ধ)</span>
+                    <strong className="text-xs font-bold text-orange-950 block">ডেমো ২: অ্যাবায়োটিক ধোঁয়া ও ধাতু (Abiotic)</strong>
+                    <span className="text-[10px] text-gray-600 block">SO₂ পোড়া ও হেভি মেটাল • সাভার শিল্পাঞ্চল (১১৩ ঘণ্টা প্লাম) • স্প্রে নিষিদ্ধ</span>
                   </div>
                 </button>
               </div>
