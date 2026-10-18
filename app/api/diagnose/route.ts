@@ -2933,7 +2933,14 @@ export async function POST(req: Request) {
             farmer_id: farmerId,
             scan_log_id: scanLogId,
             reported_via: "satellite",
-            metal_type: Array.isArray(heavyMetalStrategy.metals) && heavyMetalStrategy.metals.length > 0 ? heavyMetalStrategy.metals.join(",") : "lead",
+            metal_type: (() => {
+              const allowed = new Set(["lead", "cadmium", "chromium", "arsenic", "mercury"]);
+              if (Array.isArray(heavyMetalStrategy.metals) && heavyMetalStrategy.metals.length === 1) {
+                const m = heavyMetalStrategy.metals[0].toLowerCase();
+                return allowed.has(m) ? m : "mixed";
+              }
+              return "mixed";
+            })(),
             confidence_score: Math.min(1, Math.max(0, heavyMetalScoreForLog)),
             severity: heavyMetalStrategy.risk_level === "critical" ? "critical" : heavyMetalStrategy.risk_level === "high" ? "high" : heavyMetalStrategy.risk_level === "moderate" ? "moderate" : "low",
             geom: `POINT(${lng} ${lat})`,
